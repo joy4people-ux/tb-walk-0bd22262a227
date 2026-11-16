@@ -170,6 +170,17 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border-radius:50%;bac
 .row b{font-size:15px;font-weight:500;color:var(--muted);margin-right:2px}
 .sp{flex:1 1 0;min-width:0;min-height:44px;padding:0 4px;border-radius:12px;background:#e4e8e2;font-size:14.5px;font-weight:600;color:var(--euc-dark)}
 .sp[aria-pressed=true]{background:var(--euc-dark);color:#fff}
+#voicerow{display:grid;gap:8px}
+#voicerow[hidden]{display:none}
+#voicerow .sp:disabled{opacity:.4}
+#voicerow .sp.vn{flex:.8 1 0}
+#vrate{min-width:52px;text-align:center;font-weight:700;font-size:16px;color:var(--euc-dark)}
+#vname{font-size:13px;color:var(--muted);line-height:1.3}
+#vhelpbtn{justify-self:start;font-size:14.5px;font-weight:600;color:var(--story);text-decoration:underline;text-underline-offset:3px;min-height:36px;padding:0}
+#vhelp{font-size:15px;line-height:1.45;background:#f3f1ea;border-radius:14px;padding:10px 14px}
+#vhelp p{margin:4px 0 8px}#vhelp ol{margin:4px 0 6px;padding-left:20px}#vhelp li{margin:3px 0}
+#vhelp .vnote{font-size:13.5px;color:var(--muted)}
+#vhelp[data-only=ios] [data-os=android],#vhelp[data-only=android] [data-os=ios]{display:none}
 #read{width:100%;min-height:52px;border-radius:14px;border:2px solid var(--euc-dark);font-weight:600;color:var(--euc-dark);display:flex;align-items:center;justify-content:center;gap:9px}
 #read svg{width:21px;height:21px}
 #story{font-size:19px;line-height:1.55}
@@ -248,6 +259,36 @@ ol.steps li::before{content:counter(s);width:40px;height:40px;border-radius:50%;
         <button class="sp" type="button" data-r="0.85" aria-pressed="false">Медленно</button>
         <button class="sp" type="button" data-r="1" aria-pressed="true">Обычно</button>
         <button class="sp" type="button" data-r="1.15" aria-pressed="false">Быстро</button>
+      </div>
+
+      <div id="voicerow" hidden>
+        <div class="row" role="group" aria-label="Голос рассказа"><b>Голос</b>
+          <button class="sp" id="vf" type="button" aria-pressed="false">Женский</button>
+          <button class="sp" id="vm" type="button" aria-pressed="false">Мужской</button>
+          <button class="sp vn" id="vnext" type="button" hidden aria-label="Другой голос">Другой</button>
+        </div>
+        <div class="row" role="group" aria-label="Скорость чтения"><b>Скорость</b>
+          <button class="sp" id="vslow" type="button" aria-label="Медленнее">− Медленнее</button>
+          <span id="vrate">×1,0</span>
+          <button class="sp" id="vfast" type="button" aria-label="Быстрее">Быстрее +</button>
+        </div>
+        <small id="vname"></small>
+        <button id="vhelpbtn" type="button" aria-expanded="false">Как сделать голос лучше — бесплатно</button>
+        <div id="vhelp" hidden>
+          <p>Читает голос, встроенный в ваш телефон. В телефоне можно бесплатно скачать более живые русские голоса — мужской и женский. Один раз, около 5 минут, лучше по Wi‑Fi.</p>
+          <div data-os="ios"><b>iPhone</b><ol>
+            <li>Настройки → Универсальный доступ → «Устный контент» (в новых iOS раздел может называться иначе, например «Чтение и озвучивание»).</li>
+            <li>«Голоса» → «Русский».</li>
+            <li>Мужской — «Юрий», женский — «Милена» или «Катя». Нажмите на голос и скачайте его улучшенную версию («Улучшенный»), значок облачка.</li>
+            <li>Полностью закройте Safari (смахните его вверх в списке приложений) и снова откройте карту. Здесь выберите «Мужской» или «Женский».</li>
+          </ol><p class="vnote">Голоса Siri сайтам недоступны. Если скачанный голос не появился в списке — Safari его не отдаёт сайту, останется обычный.</p></div>
+          <div data-os="android"><b>Android</b><ol>
+            <li>Настройки → Система → Язык и ввод → «Синтез речи» (на Samsung: Общие настройки → Язык и ввод → «Преобразование текста в речь»).</li>
+            <li>Модуль: «Синтезатор речи Google» (Speech Services by Google). Если его нет — бесплатно в Google Play.</li>
+            <li>Шестерёнка рядом → «Установка голосовых данных» → «Русский (Россия)» → выберите голос (там есть мужские и женские) и скачайте.</li>
+            <li>Закройте Chrome полностью и откройте карту снова.</li>
+          </ol><p class="vnote">На Android часто выбрать голос можно только там, в настройках телефона, — сайт читает тем голосом, который выбран в телефоне.</p></div>
+        </div>
       </div>
 
       <button id="read" type="button" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6.500C10 5 7 4.500 3.500 5v13.500c3.500-.5 6.500 0 8.500 1.500 2-1.500 5-2 8.500-1.500V5C17 4.500 14 5 12 6.500zM12 6.500V20"/></svg><span id="readt">Читать текст</span></button>
@@ -585,12 +626,33 @@ function offerResume(){ const p=PLACES.find(x=>saved[x.id]); if(!p||!$("sheet").
 // Stories without a recording are read aloud by the phone's own voice (Owner 2026-11-16: free, any language, offline).
 // Read sentence by sentence: iPhone stops long texts and its pause is unreliable, so «Пауза» stops after the sentence index is kept.
 const TTS={ok:"speechSynthesis" in window&&"SpeechSynthesisUtterance" in window,on:false,chunks:[],i:0,id:null,told:false};
-function ttsText(p){ return (p.title?p.title+". ":"")+String(p.text||"").replace(/\(Черновик[^)]*\)/g,"").replace(/\s+/g," ").trim(); }
-function ttsChunks(t){ const out=[]; (t.match(/[^.!?…]+[.!?…]+[»"”)]*\s*|[^.!?…]+$/g)||[t]).forEach(x=>{ x=x.trim(); if(!x) return; if(out.length&&out[out.length-1].length+x.length<220) out[out.length-1]+=" "+x; else out.push(x); }); return out; }
-function ttsVoice(){ try{ const v=speechSynthesis.getVoices().filter(x=>/^ru/i.test(x.lang)); return v.find(x=>/Milena|Katya|Yuri|Google/i.test(x.name))||v[0]||null; }catch(e){ return null; } }
+// Owner 2026-11-16: choice of a man's / woman's voice and a hand speed control; settings stay on the phone.
+const VOICE_KEY="tb-voice-v1"; let VSET={g:"",name:"",rate:1}; try{ Object.assign(VSET,JSON.parse(localStorage.getItem(VOICE_KEY)||"{}")||{}); }catch(e){}
+function vSave(){ try{ localStorage.setItem(VOICE_KEY,JSON.stringify(VSET)); }catch(e){} }
+// Known Russian voices (public list readium/speech json/ru.json, read 2026-11-16): Apple Milena/Katya (f), Yuri (m);
+// Android Google ru-ru-x-dfc/ruc/rue (f), rud/ruf (m); Edge Svetlana/Ekaterina/Dariya (f), Dmitry (m); Windows Irina (f), Pavel (m); Chrome «Google русский» (f).
+const V_MALE=/yuri|юрий|dmitry|дмитрий|pavel|павел|x-rud|x-ruf|\bmale|мужск/i, V_FEMALE=/milena|милена|katya|катя|svetlana|светлана|ekaterina|екатерина|dariya|дария|irina|ирина|google русский|x-dfc|x-ruc|x-rue|female|женск/i;
+function vGender(v){ const n=v.name+" "+(v.voiceURI||""); return V_MALE.test(n)?"m":(V_FEMALE.test(n)?"f":""); }
+function vRank(v){ const n=v.name+" "+(v.voiceURI||""); let r=0; if(/natural|online|premium|neural/i.test(n)) r+=6; if(/enhanced|улучш|высок|\.premium\.|\.enhanced\./i.test(n)) r+=5; if(/network|google/i.test(n)) r+=2; if(/compact|eloquence/i.test(n)) r-=3; if(v.localService===false) r+=1; return r; }
+function ttsVoices(){ try{ const seen={}; return speechSynthesis.getVoices().filter(x=>/^ru/i.test(x.lang)&&!seen[x.name]&&(seen[x.name]=1)).sort((p,q)=>vRank(q)-vRank(p)); }catch(e){ return []; } }
+const V_NAMES={dfc:"Женский 1",ruc:"Женский 2",rue:"Женский 3",rud:"Мужской 1",ruf:"Мужской 2",milena:"Милена",katya:"Катя",yuri:"Юрий"};
+function vLabel(v){ const n=v.name.replace(/^Microsoft\s+|\s*-\s*Russian.*$|^Android Speech Recognition and Synthesis from Google\s+/gi,"").replace(/\bOnline\b|\(Natural\)/g,"").replace(/\s+/g," ").trim();
+  const g=n.match(/ru-ru-x-(\w+)-(network|local)/i); if(g) return (V_NAMES[g[1].toLowerCase()]||g[1])+(g[2]==="network"?" (через интернет)":"");
+  return n.replace(/^(Milena|Katya|Yuri)\b/i,m=>V_NAMES[m.toLowerCase()]).replace(/\(Enhanced\)/i,"(улучшенный)").replace(/\(Premium\)/i,"(лучший)"); }
+function ttsVoice(){ const all=ttsVoices(); if(!all.length) return null; let v=VSET.name&&all.find(x=>x.name===VSET.name); if(v) return v; if(VSET.g){ v=all.find(x=>vGender(x)===VSET.g); if(v) return v; } return all[0]; }
+// Pronunciation help: year ranges read as «1758 и 1759», Roman numerals after a name as numbers, common shortenings in full.
+function ttsClean(t){ const R={I:1,V:5,X:10}; const rom=s=>{ let n=0; for(let k=0;k<s.length;k++){ const c=R[s[k]],d=R[s[k+1]]||0; n+=c<d?-c:c; } return n; };
+  return t.replace(/(\d{3,4})\s*[–—-]\s*(\d{2,4})/g,(m,x,y)=>{ if(y.length<x.length) y=x.slice(0,x.length-y.length)+y; return +y-+x<=3?x+" и "+y:x+" — "+y; })
+    .replace(/(^|[\s(«])([IVX]{1,5})(?=[\s,.;:)»]|$)/g,(m,p,r)=>/^(?=[IVX])(X{0,3})(IX|IV|V?I{0,3})$/.test(r)&&r.length>0?p+rom(r):m)
+    .replace(/(^|[\s(])т\.\s?е\./g,"$1то есть").replace(/(^|[\s(])т\.\s?н\./g,"$1так называемый").replace(/(^|[\s(])и т\.\s?д\./g,"$1и так далее").replace(/(^|[\s(])и т\.\s?п\./g,"$1и тому подобное").replace(/(^|[\s(])ок\.\s/g,"$1около ")
+    .replace(/[«»"“”„]/g,"").replace(/\s*[\/|]\s*/g,", "); }
+function ttsText(p){ return ttsClean((p.title?p.title+". ":"")+String(p.text||"").replace(/\(Черновик[^)]*\)/g,"").replace(/\s+/g," ").trim()); }
+// Short pieces: Chrome's Google voice cuts off after ~14 s, iPhone stops long texts.
+function ttsChunks(t){ const out=[]; (t.match(/[^.!?…;]+[.!?…;]+[»"”)]*\s*|[^.!?…;]+$/g)||[t]).forEach(x=>{ x=x.trim(); if(!x) return; if(out.length&&out[out.length-1].length+x.length<170) out[out.length-1]+=" "+x; else out.push(x); }); return out; }
 function ttsUI(){ if(!current||current.audio) return; const resume=TTS.id===current.id&&TTS.i>0&&TTS.i<TTS.chunks.length; $("ic").innerHTML=TTS.on?ICON.pause:ICON.play; $("playt").textContent=TTS.on?"Пауза":(resume?"Продолжить":"Слушать"); $("play").setAttribute("aria-label",$("playt").textContent); try{ markPin(); }catch(e){} }
+function ttsUtter(text){ const u=new SpeechSynthesisUtterance(text); const v=ttsVoice(); if(v){ u.voice=v; u.lang=v.lang; } else u.lang="ru-RU"; u.rate=VSET.rate||1; return u; }
 function ttsSpeak(){ if(!TTS.on) return; if(TTS.i>=TTS.chunks.length){ TTS.on=false; TTS.i=0; ttsUI(); return; }
-  const u=new SpeechSynthesisUtterance(TTS.chunks[TTS.i]); u.lang="ru-RU"; const v=ttsVoice(); if(v) u.voice=v; u.rate=1;
+  const u=ttsUtter(TTS.chunks[TTS.i]);
   u.onend=()=>{ if(!TTS.on||u!==TTS.u) return; TTS.i++; if(TTS.i>=Math.ceil(TTS.chunks.length*.85)) markSeen(TTS.id,2); ttsSpeak(); };
   u.onerror=e=>{ if(u!==TTS.u||e.error==="interrupted"||e.error==="canceled") return; TTS.on=false; ttsUI(); toast("Голос телефона не включился. Нажмите «Слушать» ещё раз."); };
   TTS.u=u; speechSynthesis.speak(u); }
@@ -598,7 +660,22 @@ function ttsStop(){ const was=TTS.on; TTS.on=false; TTS.u=null; try{ if(was||spe
 function ttsToggle(){ if(!TTS.ok||!current) return; if(TTS.on){ ttsStop(); return; }
   if(TTS.id!==current.id){ TTS.id=current.id; TTS.chunks=ttsChunks(ttsText(current)); TTS.i=0; }
   stopSay(); a.pause(); try{ speechSynthesis.cancel(); }catch(e){} TTS.on=true; ttsSpeak(); ttsUI();
-  if(!TTS.told){ TTS.told=true; toast("Читает голос вашего телефона — озвучка диктором появится позже."); } }
+  if(!TTS.told){ TTS.told=true; toast("Читает голос вашего телефона. Голос и скорость — под кнопкой, ниже."); } }
+// After a change of voice or speed: if reading, say the current sentence again in the new voice; if not, a short sample.
+function ttsApply(){ vSave(); drawVoiceRow(); if(TTS.on){ TTS.u=null; try{ speechSynthesis.cancel(); }catch(e){} setTimeout(ttsSpeak,60); return; }
+  try{ speechSynthesis.cancel(); const u=ttsUtter("Здравствуйте! Так я буду читать вам рассказы о городе."); speechSynthesis.speak(u); }catch(e){} }
+function drawVoiceRow(){ const row=$("voicerow"); if(!row) return; const all=ttsVoices(), v=ttsVoice(), g=v?vGender(v):"";
+  const has={f:all.some(x=>vGender(x)==="f"),m:all.some(x=>vGender(x)==="m")};
+  $("vf").setAttribute("aria-pressed",g==="f"); $("vm").setAttribute("aria-pressed",g==="m");
+  const same=all.filter(x=>vGender(x)===(g||vGender(x))); $("vnext").hidden=same.length<2;
+  $("vname").textContent=v?("Сейчас: "+vLabel(v)+(all.length>1?" · голосов на телефоне: "+all.length:"")):"Русский голос на телефоне не найден — см. «Как сделать голос лучше».";
+  $("vrate").textContent="×"+(VSET.rate||1).toFixed(1).replace(".",","); $("vslow").disabled=VSET.rate<=0.61; $("vfast").disabled=VSET.rate>=1.79;
+  row.dataset.f=has.f?"1":""; row.dataset.m=has.m?"1":""; }
+function pickGender(gx){ const all=ttsVoices(), v=all.find(x=>vGender(x)===gx);
+  if(!v){ toast(gx==="m"?"Мужского русского голоса на этом телефоне пока нет. Как его добавить бесплатно — «Как сделать голос лучше».":"Женского русского голоса на этом телефоне пока нет. Как его добавить — «Как сделать голос лучше»."); $("vhelp").hidden=false; $("vhelpbtn").setAttribute("aria-expanded","true"); return; }
+  VSET.g=gx; VSET.name=v.name; ttsApply(); }
+function nextVoice(){ const v=ttsVoice(); if(!v) return; const g=vGender(v), same=ttsVoices().filter(x=>!g||vGender(x)===g); const k=same.findIndex(x=>x.name===v.name); const n=same[(k+1)%same.length]; VSET.name=n.name; VSET.g=vGender(n)||VSET.g; ttsApply(); }
+function stepRate(d){ VSET.rate=Math.min(1.8,Math.max(0.6,Math.round(((VSET.rate||1)+d)*10)/10)); ttsApply(); }
 function setPlayUI(){ const on=!a.paused&&!a.ended; $("ic").innerHTML=on?ICON.pause:ICON.play; $("playt").textContent=on?"Пауза":(a.ended?"Ещё раз":(a.currentTime>0.5?"Продолжить с "+fmt(a.currentTime):"Слушать")); $("play").setAttribute("aria-label",$("playt").textContent); }
 // The building of the chosen place is shaded in terracotta, so it is clear which building the story is about.
 let bldHi=null;
@@ -616,7 +693,7 @@ function select(p){ shadeBuilding(p);
   $("story").textContent=""; p.text.split("\n\n").forEach(t=>{ const q=document.createElement("p"); q.textContent=t; $("story").appendChild(q); }); $("plate").textContent="На табличке: "+p.plate;
   setRead(false);
   if(!same){ ttsStop(); a.pause(); if(p.audio){ pendingSeek=saved[p.id]?saved[p.id].t:0; a.src=p.audio; a.load(); } else { pendingSeek=0; a.removeAttribute("src"); a.load(); } $("bar").value=0; setBar(); setPlayUI(); }
-  ["#sheet .seek","#sheet .ctrl","#sheet .row"].forEach(q=>document.querySelector(q).hidden=!p.audio); $("play").hidden=!p.audio&&!TTS.ok; if(!p.audio){ setRead(true); ttsUI(); }
+  ["#sheet .seek","#sheet .ctrl","#sheet .row"].forEach(q=>document.querySelector(q).hidden=!p.audio); $("play").hidden=!p.audio&&!TTS.ok; $("voicerow").hidden=!!p.audio||!TTS.ok; if(!p.audio){ setRead(true); ttsUI(); drawVoiceRow(); }
   if("mediaSession" in navigator){ navigator.mediaSession.metadata=new MediaMetadata({title:p.title,artist:"The Travel Beacon",album:"Барселона"}); }
   centerOn(p); markPin();
 }
@@ -671,6 +748,10 @@ function showTags(){ const on=map.getZoom()>=16; if(on&&!map.hasLayer(seenTags))
 map.on("zoomend",showTags); setTimeout(applySeen,0); /* once every pin is on the map */
 a.addEventListener("timeupdate",()=>{ if(current&&a.duration&&a.currentTime>=a.duration*.85) markSeen(current.id,2); });
 a.addEventListener("play",()=>{ if(TTS.on) ttsStop(); });
+$("vf").onclick=()=>pickGender("f"); $("vm").onclick=()=>pickGender("m"); $("vnext").onclick=nextVoice; $("vslow").onclick=()=>stepRate(-0.1); $("vfast").onclick=()=>stepRate(0.1);
+$("vhelpbtn").onclick=()=>{ const h=$("vhelp"); h.hidden=!h.hidden; $("vhelpbtn").setAttribute("aria-expanded",String(!h.hidden)); };
+{ const ua=navigator.userAgent; $("vhelp").dataset.only=/iPhone|iPad|iPod/.test(ua)||(/Macintosh/.test(ua)&&navigator.maxTouchPoints>1)?"ios":(/Android/.test(ua)?"android":""); }
+if(TTS.ok){ try{ speechSynthesis.addEventListener("voiceschanged",()=>{ if(!$("voicerow").hidden) drawVoiceRow(); }); speechSynthesis.getVoices(); }catch(e){} }
 ["play","playing","pause","ended"].forEach(e=>a.addEventListener(e,markPin));
 let lastSave=0;
 a.addEventListener("timeupdate",()=>{ const n=Date.now(); if(n-lastSave>1000){ lastSave=n; remember(); } });
