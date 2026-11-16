@@ -582,6 +582,23 @@ function persist(){ try{ localStorage.setItem(POS_KEY,JSON.stringify(saved)); }c
 let pendingSeek=0;
 function remember(){ if(!current||!a.duration) return; if(a.ended||a.currentTime>=a.duration-1.2) delete saved[current.id]; else if(a.currentTime>1) saved[current.id]={t:+a.currentTime.toFixed(1)}; persist(); }
 function offerResume(){ const p=PLACES.find(x=>saved[x.id]); if(!p||!$("sheet").hidden) return; const b=$("hintsay"); delete b.dataset.say; b.dataset.resume=p.id; b.dataset.label="Дослушать"; b.hidden=false; $("hintt").textContent="Вы не дослушали: "+p.title+", с "+fmt(saved[p.id].t); $("hint").hidden=false; clearTimeout(toast.t); drawSay(); }
+// Stories without a recording are read aloud by the phone's own voice (Owner 2026-11-16: free, any language, offline).
+// Read sentence by sentence: iPhone stops long texts and its pause is unreliable, so «Пауза» stops after the sentence index is kept.
+const TTS={ok:"speechSynthesis" in window&&"SpeechSynthesisUtterance" in window,on:false,chunks:[],i:0,id:null,told:false};
+function ttsText(p){ return (p.title?p.title+". ":"")+String(p.text||"").replace(/\(Черновик[^)]*\)/g,"").replace(/\s+/g," ").trim(); }
+function ttsChunks(t){ const out=[]; (t.match(/[^.!?…]+[.!?…]+[»"”)]*\s*|[^.!?…]+$/g)||[t]).forEach(x=>{ x=x.trim(); if(!x) return; if(out.length&&out[out.length-1].length+x.length<220) out[out.length-1]+=" "+x; else out.push(x); }); return out; }
+function ttsVoice(){ try{ const v=speechSynthesis.getVoices().filter(x=>/^ru/i.test(x.lang)); return v.find(x=>/Milena|Katya|Yuri|Google/i.test(x.name))||v[0]||null; }catch(e){ return null; } }
+function ttsUI(){ if(!current||current.audio) return; const resume=TTS.id===current.id&&TTS.i>0&&TTS.i<TTS.chunks.length; $("ic").innerHTML=TTS.on?ICON.pause:ICON.play; $("playt").textContent=TTS.on?"Пауза":(resume?"Продолжить":"Слушать"); $("play").setAttribute("aria-label",$("playt").textContent); try{ markPin(); }catch(e){} }
+function ttsSpeak(){ if(!TTS.on) return; if(TTS.i>=TTS.chunks.length){ TTS.on=false; TTS.i=0; ttsUI(); return; }
+  const u=new SpeechSynthesisUtterance(TTS.chunks[TTS.i]); u.lang="ru-RU"; const v=ttsVoice(); if(v) u.voice=v; u.rate=1;
+  u.onend=()=>{ if(!TTS.on||u!==TTS.u) return; TTS.i++; if(TTS.i>=Math.ceil(TTS.chunks.length*.85)) markSeen(TTS.id,2); ttsSpeak(); };
+  u.onerror=e=>{ if(u!==TTS.u||e.error==="interrupted"||e.error==="canceled") return; TTS.on=false; ttsUI(); toast("Голос телефона не включился. Нажмите «Слушать» ещё раз."); };
+  TTS.u=u; speechSynthesis.speak(u); }
+function ttsStop(){ const was=TTS.on; TTS.on=false; TTS.u=null; try{ if(was||speechSynthesis.speaking) speechSynthesis.cancel(); }catch(e){} ttsUI(); }
+function ttsToggle(){ if(!TTS.ok||!current) return; if(TTS.on){ ttsStop(); return; }
+  if(TTS.id!==current.id){ TTS.id=current.id; TTS.chunks=ttsChunks(ttsText(current)); TTS.i=0; }
+  stopSay(); a.pause(); try{ speechSynthesis.cancel(); }catch(e){} TTS.on=true; ttsSpeak(); ttsUI();
+  if(!TTS.told){ TTS.told=true; toast("Читает голос вашего телефона — озвучка диктором появится позже."); } }
 function setPlayUI(){ const on=!a.paused&&!a.ended; $("ic").innerHTML=on?ICON.pause:ICON.play; $("playt").textContent=on?"Пауза":(a.ended?"Ещё раз":(a.currentTime>0.5?"Продолжить с "+fmt(a.currentTime):"Слушать")); $("play").setAttribute("aria-label",$("playt").textContent); }
 // The building of the chosen place is shaded in terracotta, so it is clear which building the story is about.
 let bldHi=null;
@@ -598,8 +615,8 @@ function select(p){ shadeBuilding(p);
   $("kind").textContent=p.kind; $("kind").className="kind"+(p.kind==="Улица"?" street":""); $("title").textContent=p.title;
   $("story").textContent=""; p.text.split("\n\n").forEach(t=>{ const q=document.createElement("p"); q.textContent=t; $("story").appendChild(q); }); $("plate").textContent="На табличке: "+p.plate;
   setRead(false);
-  if(!same){ a.pause(); if(p.audio){ pendingSeek=saved[p.id]?saved[p.id].t:0; a.src=p.audio; a.load(); } else { pendingSeek=0; a.removeAttribute("src"); a.load(); } $("bar").value=0; setBar(); setPlayUI(); }
-  ["#play","#sheet .seek","#sheet .ctrl","#sheet .row"].forEach(q=>document.querySelector(q).hidden=!p.audio); if(!p.audio) setRead(true);
+  if(!same){ ttsStop(); a.pause(); if(p.audio){ pendingSeek=saved[p.id]?saved[p.id].t:0; a.src=p.audio; a.load(); } else { pendingSeek=0; a.removeAttribute("src"); a.load(); } $("bar").value=0; setBar(); setPlayUI(); }
+  ["#sheet .seek","#sheet .ctrl","#sheet .row"].forEach(q=>document.querySelector(q).hidden=!p.audio); $("play").hidden=!p.audio&&!TTS.ok; if(!p.audio){ setRead(true); ttsUI(); }
   if("mediaSession" in navigator){ navigator.mediaSession.metadata=new MediaMetadata({title:p.title,artist:"The Travel Beacon",album:"Барселона"}); }
   centerOn(p); markPin();
 }
@@ -616,9 +633,9 @@ function zoomCard(d){ map.invalidateSize({pan:false}); const c=openPlace(); if(!
 map.on("zoomend",()=>{ const c=openPlace(); if(!c) return; try{ if(ROT.on) return; }catch(e){ return; } /* ROT is set up further down */ const pt=map.latLngToContainerPoint(c), w=windowPoint(); if(pt.distanceTo(w)>12) map.panBy(pt.subtract(w),{animate:true}); });
 function setRead(on){ $("textbox").hidden=!on; $("read").setAttribute("aria-expanded",on); $("readt").textContent=on?"Скрыть текст":"Читать текст"; if(current&&!$("sheet").hidden) centerOn(current); }
 $("read").onclick=()=>setRead($("textbox").hidden);
-function closeSheet(){ shadeBuilding(null); remember(); a.pause(); stopWalk(); $("sheet").hidden=true; map.setMaxBounds(limit); markPin(); offerResume(); }
+function closeSheet(){ shadeBuilding(null); remember(); a.pause(); ttsStop(); stopWalk(); $("sheet").hidden=true; map.setMaxBounds(limit); markPin(); offerResume(); }
 $("close").onclick=closeSheet;
-$("play").onclick=()=>{ if(a.ended) a.currentTime=0; if(a.paused) a.play().catch(()=>toast("Звук не включился. Нажмите ещё раз.")); else a.pause(); };
+$("play").onclick=()=>{ if(current&&!current.audio){ ttsToggle(); return; } if(a.ended) a.currentTime=0; if(a.paused) a.play().catch(()=>toast("Звук не включился. Нажмите ещё раз.")); else a.pause(); };
 $("again").onclick=()=>{ a.currentTime=0; a.play().catch(()=>{}); };
 const jump=d=>{ a.currentTime=Math.min(Math.max(0,a.currentTime+d),a.duration||0); setBar(); };
 $("back").onclick=()=>jump(-10); $("fwd").onclick=()=>jump(10);
@@ -630,7 +647,7 @@ bar.addEventListener("change",()=>{ if(a.duration) a.currentTime=a.duration*bar.
 ["timeupdate","loadedmetadata","durationchange","seeked"].forEach(e=>a.addEventListener(e,setBar));
 a.addEventListener("loadedmetadata",()=>{ if(pendingSeek){ a.currentTime=Math.min(pendingSeek,a.duration-0.5); pendingSeek=0; } });
 ["play","pause","ended","loadedmetadata","seeked"].forEach(e=>a.addEventListener(e,setPlayUI));
-function markPin(){ const on=!a.paused&&!a.ended&&current?current.id.replace(/-full$/,""):null, look=current&&!$("sheet").hidden?current.id.replace(/-full$/,""):null;
+function markPin(){ const on=((!a.paused&&!a.ended)||(typeof TTS!=="undefined"&&TTS.on))&&current?current.id.replace(/-full$/,""):null, look=current&&!$("sheet").hidden?current.id.replace(/-full$/,""):null;
   Object.entries(pins).forEach(([id,m])=>{ const w=m.getElement()&&m.getElement().querySelector(".pin-wrap"); if(w){ w.classList.toggle("playing",id===on); w.classList.toggle("reading",id===look&&id!==on); } if(m.setZIndexOffset) m.setZIndexOffset(id===look||id===on?2000:0); /* the pin you read about is drawn above its neighbours */ }); try{ applySeen(); }catch(e){} /* not ready during the first lines of the page */ }
 // What this phone has seen (card open 5 s) or heard (85 % of the story): kept on the phone, works offline (Owner 2026-11-14).
 const SEEN_KEY="tb-seen-v1"; let SEEN={}; try{ SEEN=JSON.parse(localStorage.getItem(SEEN_KEY)||"{}")||{}; }catch(e){}
@@ -653,6 +670,7 @@ function applySeen(){
 function showTags(){ const on=map.getZoom()>=16; if(on&&!map.hasLayer(seenTags)) seenTags.addTo(map); else if(!on&&map.hasLayer(seenTags)) map.removeLayer(seenTags); } /* street marks only close up, so the city view stays clean */
 map.on("zoomend",showTags); setTimeout(applySeen,0); /* once every pin is on the map */
 a.addEventListener("timeupdate",()=>{ if(current&&a.duration&&a.currentTime>=a.duration*.85) markSeen(current.id,2); });
+a.addEventListener("play",()=>{ if(TTS.on) ttsStop(); });
 ["play","playing","pause","ended"].forEach(e=>a.addEventListener(e,markPin));
 let lastSave=0;
 a.addEventListener("timeupdate",()=>{ const n=Date.now(); if(n-lastSave>1000){ lastSave=n; remember(); } });
