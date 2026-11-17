@@ -31,7 +31,8 @@ export const PHONE = IOS || /Android|Mobile/.test(navigator.userAgent);
 export async function canRun() {
   let cpu = false; try { cpu = !!localStorage.getItem("tb-nv-cpu"); } catch (e) {}
   if (/force-cpu/.test(location.search) || cpu) return "cpu";
-  try { if (navigator.gpu && (await navigator.gpu.requestAdapter())) return "gpu"; } catch (e) {}
+  /* some Android phones never answer requestAdapter, so it gets 4 seconds (2026-11-17) */
+  try { if (navigator.gpu && (await Promise.race([navigator.gpu.requestAdapter(), new Promise((r) => setTimeout(() => r(null), 4000))]))) return "gpu"; } catch (e) {}
   return PHONE ? "cpu" : "";
 }
 export async function isDownloaded() {

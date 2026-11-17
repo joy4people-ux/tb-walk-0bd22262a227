@@ -21,15 +21,19 @@ export async function manifest() {
   const h = await c.match(url); MANIFEST = h ? await h.json() : null; return MANIFEST;
 }
 // How the voice is made on this device: "gpu" (graphics chip, WebGPU), "cpu" (processor) or "" (too slow: the phone's own voice).
-// iPhone/iPad: processor. Measured on the Owner's iPhone 2026-11-17 (check page): switched on in 10 s, a 5.2 s phrase made in
-// 3.0 s in the lighter mode, no reset — while the graphics-chip way had reset the map. A PC's processor in the browser is too slow.
-// After a reset with the graphics chip the map asks for the processor way (localStorage "tb-nv-cpu").
+// Graphics chip first everywhere (full quality, 8 steps): the Owner heard the processor's lighter mode on his iPhone as robotic
+// (2026-11-17), and the page memory of the graphics-chip way is now ≈6× smaller than when it reset his map. If it still resets
+// the page, the map marks "tb-nv-cpu" and uses the processor next time (iPhone measured: 5.2 s phrase in 6.0 s at 8 steps,
+// 3.0 s at 4 steps, no reset). Phones without a graphics chip for pages (many Android) use the processor; a PC's processor
+// in the browser is too slow, so a PC without it keeps its own voice.
 export const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+export const PHONE = IOS || /Android|Mobile/.test(navigator.userAgent);
 export async function canRun() {
   let cpu = false; try { cpu = !!localStorage.getItem("tb-nv-cpu"); } catch (e) {}
-  if (/force-cpu/.test(location.search) || IOS || cpu) return "cpu";
-  try { if (navigator.gpu && (await navigator.gpu.requestAdapter())) return "gpu"; } catch (e) {}
-  return "";
+  if (/force-cpu/.test(location.search) || cpu) return "cpu";
+  /* some Android phones never answer requestAdapter, so it gets 4 seconds (2026-11-17) */
+  try { if (navigator.gpu && (await Promise.race([navigator.gpu.requestAdapter(), new Promise((r) => setTimeout(() => r(null), 4000))]))) return "gpu"; } catch (e) {}
+  return PHONE ? "cpu" : "";
 }
 export async function isDownloaded() {
   const m = await manifest(); if (!m) return false;
@@ -122,7 +126,7 @@ async function loadHere(how, say) {
     catch (e) { if (eps[0] !== "webgpu") throw e; eps = ["wasm"]; ses.push(await ort.InferenceSession.create(graph, opt(eps))); }
     bytes = graph = null; await new Promise((r) => setTimeout(r, 50)); // let the phone free the file before the next one
   }
-  TTS = { cfg, indexer, dp: ses[0], enc: ses[1], est: ses[2], voc: ses[3], sr: cfg.ae.sample_rate, gpu: eps[0] === "webgpu", steps: eps[0] === "webgpu" ? 8 : 4 /* processor: lighter mode from the start */, secs: ((performance.now() - t0) / 1000).toFixed(1) };
+  TTS = { cfg, indexer, dp: ses[0], enc: ses[1], est: ses[2], voc: ses[3], sr: cfg.ae.sample_rate, gpu: eps[0] === "webgpu", steps: eps[0] === "webgpu" ? 8 : 6 /* processor: 6 steps — 4 sounded robotic to the Owner, 8 is a little slower than speech on his iPhone */, secs: ((performance.now() - t0) / 1000).toFixed(1) };
   try { await synth("Да.", "ru", "M1", 2, 1); } catch (e) {} // warm the graphics chip so the first story starts sooner
   return TTS;
 }
@@ -197,7 +201,7 @@ export function reader() {
       for (let k = from; k < list.length && my === token; k++) {
         const a = performance.now(); const w = await synth(list[k], lang, voiceId, TTS.steps, speed); if (my !== token) return;
         R.made += performance.now() - a; R.sound += w.length / TTS.sr;
-        if (TTS.steps > 4 && R.made / 1000 > R.sound * 0.8) TTS.steps = 4; // slow phone: lighter mode
+        if (TTS.steps > 6 && R.made / 1000 > R.sound * 0.85) TTS.steps = 6; // slow phone: a little lighter, never the robotic 4 steps (Owner 2026-11-17)
         const buf = AC.createBuffer(1, w.length, TTS.sr); buf.copyToChannel(w, 0);
         const s = AC.createBufferSource(); s.buffer = buf; s.connect(AC.destination);
         when = Math.max(when, AC.currentTime + 0.02); s.start(when);
