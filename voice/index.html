@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>Голос без интернета — проба</title>
+<style>
+:root{--bg:#e6e9e3;--card:#fbfaf6;--ink:#1f2a25;--muted:#5e6b64;--euc:#34574a;--euc-dark:#28453a;--story:#c0573a;--chip:#e4e8e2}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+main{max-width:560px;margin:0 auto;padding:18px 16px 40px}
+h1{font:700 28px/1.15 Georgia,"Times New Roman",serif;margin:6px 0 6px}
+.lead{color:var(--muted);margin:0 0 16px}
+.card{background:var(--card);border-radius:20px;padding:16px;box-shadow:0 2px 10px rgba(0,0,0,.06);margin-bottom:14px}
+#state{font-weight:700;color:var(--euc-dark)}
+button{font:inherit;border:0;cursor:pointer}
+.big{width:100%;min-height:62px;border-radius:18px;background:var(--euc);color:#fff;font-size:20px;font-weight:700;box-shadow:0 3px 0 var(--euc-dark)}
+.big:disabled{opacity:.55}
+progress{width:100%;height:14px;margin-top:12px;accent-color:var(--euc)}
+#dlt{font-size:14px;color:var(--muted)}
+h2{font-size:15px;font-weight:600;color:var(--muted);margin:14px 0 8px;text-transform:none}
+.row{display:flex;flex-wrap:wrap;gap:8px}
+.chip{min-height:46px;padding:0 14px;border-radius:14px;background:var(--chip);color:var(--euc-dark);font-weight:600;font-size:15.5px}
+.chip[aria-pressed=true]{background:var(--euc-dark);color:#fff}
+.sp{display:flex;align-items:center;gap:8px}.sp .chip{flex:1}
+#rate{min-width:56px;text-align:center;font-weight:700}
+#stat{font-size:14px;color:var(--muted);min-height:20px;margin-top:10px}
+#stitle{font:700 20px/1.2 Georgia,serif;margin:4px 0 6px}
+#story{font-size:16.5px;line-height:1.55;white-space:pre-line}
+.note{font-size:13.5px;color:var(--muted)}
+#wipe{background:none;color:var(--story);text-decoration:underline;font-size:14px;padding:0}
+</style>
+</head>
+<body>
+<main>
+  <h1>Голос без интернета</h1>
+  <p class="lead">Проба для живых карт: голос рождается прямо в вашем телефоне, на 31 языке, мужской и женский. Скачивается один раз, дальше работает в режиме «в самолёте».</p>
+
+  <div class="card">
+    <div id="state">Проверяю…</div>
+    <div id="dl" hidden>
+      <p>Один раз скачайте голос — около <b id="size">…</b> МБ. Лучше дома по Wi‑Fi. Страницу не закрывайте до конца загрузки.</p>
+      <button class="big" id="get" type="button">Скачать голос в телефон</button>
+      <div id="prog" hidden><progress id="bar" max="100" value="0"></progress><div id="dlt"></div></div>
+    </div>
+  </div>
+
+  <div id="player" hidden>
+    <div class="card">
+      <h2>Язык</h2>
+      <div class="row">
+        <button class="chip" data-lang="ru" type="button">Русский</button>
+        <button class="chip" data-lang="en" type="button">English</button>
+        <button class="chip" data-lang="es" type="button">Español</button>
+        <button class="chip" data-lang="de" type="button">Deutsch</button>
+      </div>
+      <h2>Мужской голос</h2>
+      <div class="row">
+        <button class="chip" data-voice="M1" type="button">Мужской 1</button>
+        <button class="chip" data-voice="M2" type="button">Мужской 2</button>
+        <button class="chip" data-voice="M3" type="button">Мужской 3</button>
+        <button class="chip" data-voice="M4" type="button">Мужской 4</button>
+        <button class="chip" data-voice="M5" type="button">Мужской 5</button>
+      </div>
+      <h2>Женский голос</h2>
+      <div class="row">
+        <button class="chip" data-voice="F1" type="button">Женский 1</button>
+        <button class="chip" data-voice="F2" type="button">Женский 2</button>
+        <button class="chip" data-voice="F3" type="button">Женский 3</button>
+        <button class="chip" data-voice="F4" type="button">Женский 4</button>
+        <button class="chip" data-voice="F5" type="button">Женский 5</button>
+      </div>
+      <h2>Скорость</h2>
+      <div class="sp"><button class="chip" id="slow" type="button">− Медленнее</button><span id="rate">×1,0</span><button class="chip" id="fast" type="button">Быстрее +</button></div>
+    </div>
+
+    <div class="card">
+      <button class="big" id="play" type="button">▶ Слушать</button>
+      <div id="stat"></div>
+      <div id="stitle"></div>
+      <div id="story"></div>
+    </div>
+    <p class="note">Голос: Supertonic 3 (Supertone, лицензия OpenRAIL-M), работает внутри телефона. Это проба: первый звук может прийти через несколько секунд. <button id="wipe" type="button">Удалить голос из телефона</button></p>
+  </div>
+</main>
+<script>
+window.TEXTS={
+ ru:{title:"Башня Белен",sample:"Здравствуйте! Так я буду рассказывать вам о городе.",
+  text:"Перед вами, пожалуй, самая узнаваемая картинка Лиссабона: светлая каменная башня у самой воды, вся в каменных канатах, крестах и щитах. Её начали строить в 1514 году при короле Мануэле Первом, чтобы стеречь вход в реку Тежу. Официально она до сих пор называется башней Святого Винсента, в честь покровителя Лиссабона. А где-то на её стенах прячется каменный носорог.\n\nЕсть здания, которые строят для жизни, а есть здания, которые строят для встречи. Эта башня из вторых. Сюда, к устью Тежу, возвращались корабли из Индии и Африки, и первым, что видели моряки после месяцев океана, был этот белый каменный сторож. Он встречал их, как мать встречает сына у калитки: строго, но нарядно одетый."},
+ en:{title:"Belém Tower",sample:"Hello! This is how I will tell you about the city.",
+  text:"This is probably the most recognisable picture of Lisbon: a pale stone tower right at the water's edge, covered in carved ropes, crosses and shields. Building began in 1514, under King Manuel the First, to guard the entrance to the river Tagus. Officially it is still called the Tower of Saint Vincent, after the patron saint of Lisbon. And somewhere on its walls hides a stone rhinoceros.\n\nSome buildings are made for living, and some are made for welcoming. This tower is one of the second kind. Ships returning from India and Africa sailed back here, and the first thing the sailors saw after months at sea was this white stone guard. It greeted them the way a mother greets her son at the gate: strict, but dressed in her best."},
+ es:{title:"Torre de Belém",sample:"¡Hola! Así le contaré la historia de la ciudad.",
+  text:"Esta es, probablemente, la imagen más reconocible de Lisboa: una torre de piedra clara junto al agua, cubierta de cuerdas, cruces y escudos tallados. Se empezó a construir en 1514, bajo el rey Manuel Primero, para vigilar la entrada del río Tajo. Oficialmente todavía se llama Torre de San Vicente, en honor al patrón de Lisboa. Y en algún lugar de sus muros se esconde un rinoceronte de piedra.\n\nHay edificios que se construyen para vivir, y otros para dar la bienvenida. Esta torre es de los segundos. Aquí volvían los barcos de la India y de África, y lo primero que veían los marineros tras meses de océano era este blanco guardián de piedra."},
+ de:{title:"Turm von Belém",sample:"Hallo! So werde ich Ihnen von der Stadt erzählen.",
+  text:"Das ist wohl das bekannteste Bild von Lissabon: ein heller Steinturm direkt am Wasser, bedeckt mit steinernen Tauen, Kreuzen und Wappen. Der Bau begann 1514 unter König Manuel dem Ersten, um die Einfahrt in den Tejo zu bewachen. Offiziell heißt er bis heute Turm des Heiligen Vinzenz, nach dem Schutzpatron Lissabons. Und irgendwo an seinen Mauern versteckt sich ein steinernes Nashorn.\n\nManche Gebäude baut man zum Wohnen, andere zum Empfangen. Dieser Turm gehört zu den zweiten. Hierher kehrten die Schiffe aus Indien und Afrika zurück, und das Erste, was die Seeleute nach Monaten auf dem Ozean sahen, war dieser weiße steinerne Wächter."}
+};
+</script>
+<script type="module" src="voice.js"></script>
+</body>
+</html>
