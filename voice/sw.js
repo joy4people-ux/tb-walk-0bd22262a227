@@ -1,5 +1,5 @@
 // Keeps the voice test page and the engine on the phone; the voice model itself is kept by the page (Cache Storage "tb-offline-voice-st3-v1").
-const V = "tb-offline-voice-shell-1794925674361";
+const V = "tb-offline-voice-shell-1794927067412";
 const FILES = ["./", "index.html", "voice.js", "voice-engine.mjs", "ort/ort.webgpu.min.mjs", "ort/ort-wasm-simd-threaded.jsep.mjs", "ort/ort-wasm-simd-threaded.jsep.wasm"];
 self.addEventListener("install", (e) => e.waitUntil(caches.open(V).then((c) => c.addAll(FILES)).then(() => self.skipWaiting())));
 self.addEventListener("activate", (e) => e.waitUntil(caches.keys().then((k) => Promise.all(k.filter((x) => x.startsWith("tb-offline-voice-shell-") && x !== V).map((x) => caches.delete(x)))).then(() => self.clients.claim())));
