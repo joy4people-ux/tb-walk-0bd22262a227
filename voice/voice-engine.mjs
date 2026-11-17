@@ -12,7 +12,7 @@ export const LANGS = ["en", "ko", "ja", "ar", "bg", "cs", "da", "de", "el", "es"
 const abs = (p) => new URL(p, BASE).href;
 // The engine file carries its version in the name (voice-engine.<hash>.mjs), so a fixed engine reaches phones that already downloaded the voice.
 const SELF = new URL(import.meta.url).pathname.split("/").pop();
-let MANIFEST = null, TTS = null; const STYLE = {};
+let MANIFEST = null, TTS = null; const STYLE = {}; export const LAST = { peak: 0, bad: 0 };
 
 export async function manifest() {
   if (MANIFEST) return MANIFEST;
@@ -140,11 +140,17 @@ async function synthNow(text, lang, voiceId, steps, speed) {
       current_step: new ort.Tensor("float32", new Float32Array([s]), [1]), total_step: tot });
     x = Float32Array.from(out.denoised_latent.data);
   }
-  return Float32Array.from((await TTS.voc.run({ latent: new ort.Tensor("float32", x, [1, dim, len]) })).wav_tts.data.subarray(0, wavLen));
+  const w = Float32Array.from((await TTS.voc.run({ latent: new ort.Tensor("float32", x, [1, dim, len]) })).wav_tts.data.subarray(0, wavLen));
+  // Volume guard: the lighter mode (4 steps) gave peaks of 1.07–1.25 on this PC — over the limit, heard as a harsh clipped sound.
+  // Broken numbers (graphics chip errors) become silence instead of a squeak.
+  let peak = 0, bad = 0; for (let i = 0; i < w.length; i++) { if (!Number.isFinite(w[i])) { w[i] = 0; bad++; } const v = Math.abs(w[i]); if (v > peak) peak = v; }
+  LAST.peak = peak; LAST.bad = bad; // raw numbers before the guard, for the «Проверка голоса» page
+  if (peak > 0.9) { const k = 0.9 / peak; for (let i = 0; i < w.length; i++) w[i] *= k; }
+  return w;
 }
-// Pieces for reading: the first one short (the sound starts sooner), the rest up to ~220 letters.
+// Pieces for reading: the first one short (the sound starts sooner), the rest up to ~140 letters.
 export function pieces(t, lang) {
-  const max = lang === "ja" || lang === "ko" ? 100 : 220, out = [];
+  const max = lang === "ja" || lang === "ko" ? 70 : 140, out = []; // shorter pieces = less graphics memory at once (iPhone, 2026-11-17)
   (t.match(/[^.!?…]+[.!?…]+["»)]*\s*|[^.!?…]+$/g) || [t]).forEach((s) => { s = s.trim(); if (!s) return;
     if (out.length > 1 && out[out.length - 1].length + s.length < max) out[out.length - 1] += " " + s; else out.push(s); });
   return out;

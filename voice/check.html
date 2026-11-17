@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Проверка голоса</title>
+<style>
+  :root { --bg:#f6f1e7; --ink:#2b2a26; --muted:#6b6458; --card:#fffdf8; --line:#ddd3c2; --ok:#2f6b3a; --bad:#a3361f; --btn:#2f4a3a; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#1d1c19; --ink:#efe9dc; --muted:#b3ab9c; --card:#282622; --line:#423e36; --ok:#7fc28c; --bad:#ef8a73; --btn:#4d7a60; } }
+  body { margin:0; background:var(--bg); color:var(--ink); font:17px/1.45 -apple-system, system-ui, sans-serif; }
+  main { max-width:560px; margin:0 auto; padding:16px; }
+  h1 { font-size:22px; margin:6px 0 4px; }
+  p.sub { color:var(--muted); margin:0 0 14px; }
+  .step { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin:10px 0; }
+  .step b { display:block; margin-bottom:6px; }
+  button { font:inherit; font-weight:600; width:100%; padding:13px; border:0; border-radius:10px; background:var(--btn); color:#fff; margin-top:6px; }
+  button:disabled { opacity:.45; }
+  #log { white-space:pre-wrap; font:13px/1.4 ui-monospace, Menlo, monospace; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:10px; margin-top:12px; }
+  .ok { color:var(--ok); font-weight:600; } .bad { color:var(--bad); font-weight:600; }
+  #prev { border-color:var(--bad); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Проверка голоса на телефоне</h1>
+  <p class="sub">Нажимайте кнопки по порядку. В конце сделайте снимок экрана с записью внизу и пришлите Алёше.</p>
+  <div class="step" id="prev" hidden></div>
+  <div class="step"><b>1. Звук</b>Нажмите — должен прозвучать короткий гудок (1 секунда).<button id="beep" type="button">Гудок</button></div>
+  <div class="step"><b>2. Голос через видеочип</b>Включает голос так же, как карта, и произносит одну фразу.<button id="gpu" type="button">Включить и сказать фразу</button></div>
+  <div class="step"><b>3. Голос через процессор</b>Медленнее, но без видеочипа. Нажимать после шага 2 — страница откроется заново.<button id="cpu" type="button">Проверить через процессор</button></div>
+  <div id="log"></div>
+</main>
+<script type="module" src="check.js"></script>
+</body>
+</html>

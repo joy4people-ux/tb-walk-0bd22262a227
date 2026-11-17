@@ -12,7 +12,7 @@ export const LANGS = ["en", "ko", "ja", "ar", "bg", "cs", "da", "de", "el", "es"
 const abs = (p) => new URL(p, BASE).href;
 // The engine file carries its version in the name (voice-engine.<hash>.mjs), so a fixed engine reaches phones that already downloaded the voice.
 const SELF = new URL(import.meta.url).pathname.split("/").pop();
-let MANIFEST = null, TTS = null; const STYLE = {};
+let MANIFEST = null, TTS = null; const STYLE = {}; export const LAST = { peak: 0, bad: 0 };
 
 export async function manifest() {
   if (MANIFEST) return MANIFEST;
@@ -58,9 +58,30 @@ export async function download(onBytes) {
 }
 async function readFile(name) {
   const m = await manifest(); const f = m.files.find((x) => x.name === name);
-  const bufs = []; for (const p of f.parts) bufs.push(new Uint8Array(await cachedFetch(abs(p))));
-  if (bufs.length === 1) return bufs[0];
-  const out = new Uint8Array(f.size); let o = 0; for (const b of bufs) { out.set(b, o); o += b.length; } return out;
+  if (f.parts.length === 1) return new Uint8Array(await cachedFetch(abs(f.parts[0])));
+  // Joined part by part, so the phone never holds the parts and the whole file at the same time (iPhone memory, 2026-11-17).
+  const out = new Uint8Array(f.size); let o = 0; for (const p of f.parts) { const b = new Uint8Array(await cachedFetch(abs(p))); out.set(b, o); o += b.length; } return out;
+}
+// The weights are handed to the engine as «external data»: the browser sends them straight to the graphics chip
+// and keeps only the small graph in page memory. On this PC page memory fell from about 1.1 GB; the iPhone page
+// was reset by memory overflow (Owner, 2026-11-17). Same model file, nothing new to download: only the description
+// of where each weight lies is rewritten (ONNX protobuf: graph 7 → initializer 5 → raw_data 9 becomes external_data 13).
+const W = "weights.bin";
+function rv(b, p) { let v = 0, m = 1, x; do { x = b[p++]; v += (x & 127) * m; m *= 128; } while (x & 128); return [v, p]; }
+function wv(n) { const o = []; do { let x = n % 128; n = Math.floor(n / 128); if (n) x |= 128; o.push(x); } while (n); return Uint8Array.from(o); }
+function cat(list) { let n = 0; for (const a of list) n += a.length; const o = new Uint8Array(n); let k = 0; for (const a of list) { o.set(a, k); k += a.length; } return o; }
+function fields(b) { const out = []; let p = 0; while (p < b.length) { const s = p; let k; [k, p] = rv(b, p); const no = Math.floor(k / 8), wt = k % 8; let val;
+  if (wt === 0) [val, p] = rv(b, p); else if (wt === 1) p += 8; else if (wt === 5) p += 4;
+  else if (wt === 2) { let n; [n, p] = rv(b, p); val = b.subarray(p, p + n); p += n; } else throw new Error("onnx wire " + wt);
+  out.push({ no, raw: b.subarray(s, p), val }); } return out; }
+const ld = (no, u) => cat([wv(no * 8 + 2), wv(u.length), u]);
+const ent = (k, v) => { const e = new TextEncoder(); return ld(13, cat([ld(1, e.encode(k)), ld(2, e.encode(v))])); };
+function externalize(bytes) {
+  const tensor = (t) => { const f = fields(t), raw = f.find((x) => x.no === 9); if (!raw || raw.val.length < 1024) return t;
+    const keep = f.filter((x) => x.no !== 9 && x.no !== 13 && x.no !== 14).map((x) => x.raw);
+    return cat([...keep, ent("location", W), ent("offset", String(raw.val.byteOffset - bytes.byteOffset)), ent("length", String(raw.val.length)), wv(14 * 8), wv(1)]); };
+  const graph = (g) => cat(fields(g).map((x) => (x.no === 5 ? ld(5, tensor(x.val)) : x.raw)));
+  return cat(fields(bytes).map((x) => (x.no === 7 ? ld(7, graph(x.val)) : x.raw)));
 }
 const readJson = async (name) => JSON.parse(new TextDecoder().decode(await readFile(name)));
 
@@ -73,9 +94,11 @@ export async function load(say) {
   const ses = []; const names = ["duration_predictor.onnx", "text_encoder.onnx", "vector_estimator.onnx", "vocoder.onnx"];
   for (let i = 0; i < names.length; i++) {
     say && say("Включаю голос… " + (i + 1) + " из 4");
-    const bytes = await readFile(names[i]);
-    try { ses.push(await ort.InferenceSession.create(bytes, { executionProviders: eps, graphOptimizationLevel: "all" })); }
-    catch (e) { if (eps[0] !== "webgpu") throw e; eps = ["wasm"]; ses.push(await ort.InferenceSession.create(bytes, { executionProviders: eps })); }
+    let bytes = await readFile(names[i]), graph = externalize(bytes);
+    const opt = (ep) => ({ executionProviders: ep, graphOptimizationLevel: "all", enableCpuMemArena: false, enableMemPattern: false, externalData: [{ path: W, data: bytes }] });
+    try { ses.push(await ort.InferenceSession.create(graph, opt(eps))); }
+    catch (e) { if (eps[0] !== "webgpu") throw e; eps = ["wasm"]; ses.push(await ort.InferenceSession.create(graph, opt(eps))); }
+    bytes = graph = null; await new Promise((r) => setTimeout(r, 50)); // let the phone free the file before the next one
   }
   TTS = { cfg, indexer, dp: ses[0], enc: ses[1], est: ses[2], voc: ses[3], sr: cfg.ae.sample_rate, gpu: eps[0] === "webgpu", steps: 8, secs: ((performance.now() - t0) / 1000).toFixed(1) };
   try { await synth("Да.", "ru", "M1", 2, 1); } catch (e) {} // warm the graphics chip so the first story starts sooner
@@ -117,11 +140,17 @@ async function synthNow(text, lang, voiceId, steps, speed) {
       current_step: new ort.Tensor("float32", new Float32Array([s]), [1]), total_step: tot });
     x = Float32Array.from(out.denoised_latent.data);
   }
-  return Float32Array.from((await TTS.voc.run({ latent: new ort.Tensor("float32", x, [1, dim, len]) })).wav_tts.data.subarray(0, wavLen));
+  const w = Float32Array.from((await TTS.voc.run({ latent: new ort.Tensor("float32", x, [1, dim, len]) })).wav_tts.data.subarray(0, wavLen));
+  // Volume guard: the lighter mode (4 steps) gave peaks of 1.07–1.25 on this PC — over the limit, heard as a harsh clipped sound.
+  // Broken numbers (graphics chip errors) become silence instead of a squeak.
+  let peak = 0, bad = 0; for (let i = 0; i < w.length; i++) { if (!Number.isFinite(w[i])) { w[i] = 0; bad++; } const v = Math.abs(w[i]); if (v > peak) peak = v; }
+  LAST.peak = peak; LAST.bad = bad; // raw numbers before the guard, for the «Проверка голоса» page
+  if (peak > 0.9) { const k = 0.9 / peak; for (let i = 0; i < w.length; i++) w[i] *= k; }
+  return w;
 }
-// Pieces for reading: the first one short (the sound starts sooner), the rest up to ~220 letters.
+// Pieces for reading: the first one short (the sound starts sooner), the rest up to ~140 letters.
 export function pieces(t, lang) {
-  const max = lang === "ja" || lang === "ko" ? 100 : 220, out = [];
+  const max = lang === "ja" || lang === "ko" ? 70 : 140, out = []; // shorter pieces = less graphics memory at once (iPhone, 2026-11-17)
   (t.match(/[^.!?…]+[.!?…]+["»)]*\s*|[^.!?…]+$/g) || [t]).forEach((s) => { s = s.trim(); if (!s) return;
     if (out.length > 1 && out[out.length - 1].length + s.length < max) out[out.length - 1] += " " + s; else out.push(s); });
   return out;
@@ -131,9 +160,17 @@ export function pieces(t, lang) {
 export function reader() {
   let AC = null, srcs = [], token = 0;
   const R = { on: false, i: 0, made: 0, sound: 0, onPiece: null, onEnd: null, onStat: null,
+    // Must be called right inside the tap, before any waiting: the iPhone lets a page make sound only from a tap.
+    // The first tap on «Мужской» was silent because the sound was switched on after the voice had loaded (Owner, 2026-11-17).
+    // «playback» also lets the story sound when the iPhone's side switch is on silent, like the phone voice.
+    unlock() {
+      try { if (navigator.audioSession) navigator.audioSession.type = "playback"; } catch (e) {}
+      AC = AC || new (window.AudioContext || window.webkitAudioContext)();
+      try { AC.resume(); const s = AC.createBufferSource(); s.buffer = AC.createBuffer(1, 1, 22050); s.connect(AC.destination); s.start(0); } catch (e) {}
+    },
     async play(list, from, lang, voiceId, speed) {
       R.stop(); const my = ++token; R.on = true; R.i = from;
-      AC = AC || new (window.AudioContext || window.webkitAudioContext)(); try { await AC.resume(); } catch (e) {}
+      R.unlock(); try { await AC.resume(); } catch (e) {}
       let when = AC.currentTime + 0.05, first = true;
       for (let k = from; k < list.length && my === token; k++) {
         const a = performance.now(); const w = await synth(list[k], lang, voiceId, TTS.steps, speed); if (my !== token) return;
