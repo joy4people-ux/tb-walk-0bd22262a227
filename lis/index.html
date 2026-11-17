@@ -703,7 +703,8 @@ function drawVoiceRow(){ const row=$("voicerow"); if(!row) return; if(NV&&NV.ok)
   row.dataset.f=has.f?"1":""; row.dataset.m=has.m?"1":"";
   // Every Russian voice the phone gives to the map: tap one to choose it exactly (also shows what Safari really offers).
   const L=$("vlist"); if(L){ L.innerHTML=""; all.forEach(x=>{ const b=document.createElement("button"); b.type="button"; b.className="vchip"; b.setAttribute("aria-pressed",String(!!v&&vKey(x)===vKey(v))); b.textContent=vLabel(x)+(vGender(x)==="m"?" · муж.":vGender(x)==="f"?" · жен.":""); b.onclick=()=>{ VSET.uri=vKey(x); VSET.name=x.name; VSET.g=vGender(x)||VSET.g; ttsApply(); }; L.appendChild(b); }); if(!all.length) L.textContent="Телефон пока не дал карте ни одного русского голоса.";
-    const T=$("vtech"); if(T) T.textContent=all.length?"Для проверки: "+all.map(x=>x.name+" = "+(x.voiceURI||"—")).join("; "):""; }
+    const T=$("vtech"); if(T){ T.textContent=all.length?"Для проверки: "+all.map(x=>x.name+" = "+(x.voiceURI||"—")).join("; "):"";
+      if(NV&&NV.failed&&NV.have){ const b=document.createElement("button"); b.type="button"; b.className="vchip"; b.textContent="Попробовать голос без интернета ещё раз"; b.onclick=nvRetry; T.prepend(b," "); } } }
   if(!all.length&&(drawVoiceRow.n=(drawVoiceRow.n||0)+1)<8) setTimeout(drawVoiceRow,400); /* Safari may give the list late and without an event */ }
 function pickGender(gx){ if(NV&&NV.ok){ nvPick(gx); return; } const all=ttsVoices(), v=all.find(x=>vGender(x)===gx);
   const alias=!v&&all.find(x=>V_ALIAS.has(x));
@@ -715,7 +716,7 @@ function stepRate(d){ VSET.rate=Math.min(1.8,Math.max(0.6,Math.round(((VSET.rate
 // ---- Voice without internet (Owner 2026-11-16): one voice for every story, made inside the phone by voice/voice-engine.mjs.
 // One button «Скачать всё для поездки» stores the voice and this city's photos; after that the map needs no internet.
 // Phones without a graphics chip for the browser (no WebGPU) keep the phone's own voice.
-var NV={base:"../voice/",engine:"voice-engine.290963ae.mjs",mod:null,can:"",ok:false,have:false,R:null,list:[],i:0,id:null,loading:false};
+var NV={base:"../voice/",engine:"voice-engine.d5a4acd4.mjs",mod:null,can:"",ok:false,have:false,R:null,list:[],i:0,id:null,loading:false};
 const NV_NAMES={M1:"Мужской 1",M2:"Мужской 2",M3:"Мужской 3",M4:"Мужской 4",M5:"Мужской 5",F1:"Женский 1",F2:"Женский 2",F3:"Женский 3",F4:"Женский 4",F5:"Женский 5"};
 const TRIP_PHOTO_BYTES=131271279, TRIP_CACHE="tb-trip-photos-"+location.pathname.replace(/[^a-z]/gi,"").slice(-24);
 function nvVoice(){ return NV_NAMES[VSET.nv]?VSET.nv:"M1"; }
@@ -724,7 +725,14 @@ async function tripPhotosStored(){ try{ const c=await caches.open(TRIP_CACHE), l
 async function nvInit(){ if(!NV.base||!("caches" in window)) return;
   try{ NV.mod=await import(NV.base+NV.engine); }catch(e){ return; }
   try{ NV.can=await NV.mod.canRun(); NV.have=await NV.mod.isDownloaded(); if(!NV.have&&NV.can==="gpu"&&await NV.mod.repair()) NV.have=await NV.mod.isDownloaded(); }catch(e){}
-  NV.ok=NV.can==="gpu"&&NV.have; drawTrip(); if(current&&!current.audio){ drawVoiceRow(); ttsUI(); } }
+  // Crash guard (iPhone 2026-11-17: the page was reset while the voice loaded). A mark is set while the voice switches on and
+  // during its first pieces; if the page starts again with the mark still there, the page had been reset — this phone reads with its own voice.
+  try{ if(localStorage.getItem(NV_BUSY)){ localStorage.removeItem(NV_BUSY); localStorage.setItem(NV_FAIL,"1"); NV.justFailed=true; } NV.failed=!!localStorage.getItem(NV_FAIL); }catch(e){}
+  NV.ok=NV.can==="gpu"&&NV.have&&!NV.failed; drawTrip(); if(current&&!current.audio){ drawVoiceRow(); ttsUI(); }
+  if(NV.justFailed) toast("Голос без интернета не поместился в память этого телефона, и карта перезагрузилась. Рассказы читает голос телефона."); }
+const NV_BUSY="tb-nv-busy", NV_FAIL="tb-nv-failed";
+function nvBusy(on){ try{ if(on) localStorage.setItem(NV_BUSY,String(Date.now())); else localStorage.removeItem(NV_BUSY); }catch(e){} }
+function nvRetry(){ try{ localStorage.removeItem(NV_FAIL); }catch(e){} NV.failed=false; NV.ok=NV.can==="gpu"&&NV.have; drawVoiceRow(); ttsUI(); toast("Пробую голос без интернета ещё раз: нажмите «Слушать»."); }
 async function drawTrip(){ const box=$("trip"); if(!box||!NV.mod) return; $("vtrip").hidden=!(NV.can==="gpu"&&!NV.have)||!!tripGet.on;
   const photos=await tripPhotosStored(), voiceNeeded=NV.can==="gpu"&&!NV.have;
   const mb=Math.round(((voiceNeeded?await NV.mod.totalBytes():0)+(photos?0:TRIP_PHOTO_BYTES))/1e6);
@@ -742,20 +750,23 @@ async function tripGet(){ if(tripGet.on||!NV.mod) return; tripGet.on=true; $("tr
     const work=async()=>{ while(k<list.length){ const u=list[k++]; try{ if(await c.match(u)) { done+=TRIP_PHOTO_BYTES/list.length; show(); continue; } const r=await fetch(u); if(r.ok){ const b=await r.blob(); await c.put(u,new Response(b,{headers:{"Content-Type":r.headers.get("Content-Type")||"image/jpeg"}})); done+=b.size; } }catch(e){} show(); } };
     await Promise.all([work(),work(),work(),work()]);
     try{ if(navigator.storage&&navigator.storage.persist) await navigator.storage.persist(); }catch(e){}
-    toast(NV.ok?"Готово: карта, фото и голос в телефоне. Можно гулять без интернета.":"Готово: карта и фото в телефоне.");
-  }catch(e){ toast("Загрузка прервалась. Нажмите «Скачать всё для поездки» ещё раз — продолжит с того же места."); }
-  tripGet.on=false; $("tripbar").hidden=true; $("trippill").hidden=true; drawTrip(); if(current&&!current.audio){ drawVoiceRow(); ttsUI(); } }
+    tripGet.ok=true; toast(NV.ok?"✓ Готово: карта, фото и голос в телефоне. Можно гулять без интернета.":"✓ Готово: карта и фото в телефоне.");
+  }catch(e){ tripGet.ok=false; toast("Загрузка прервалась. Нажмите «Скачать всё для поездки» ещё раз — продолжит с того же места."); }
+  tripGet.on=false; $("tripbar").hidden=true; drawTrip();
+  if(tripGet.ok){ $("trippillt").textContent=NV.ok?"✓ Всё для поездки в телефоне":"✓ Карта и фото в телефоне"; setTimeout(()=>{ if(!tripGet.on) $("trippill").hidden=true; },15000); } else $("trippill").hidden=true; if(current&&!current.audio){ drawVoiceRow(); ttsUI(); } }
 function nvUI(){ if(!current||current.audio) return; const on=!!(NV.R&&NV.R.on), resume=NV.id===current.id&&NV.i>0&&NV.i<NV.list.length;
   $("ic").innerHTML=on?ICON.pause:ICON.play; $("playt").textContent=NV.loading?"Включаю голос…":(on?"Пауза":(resume?"Продолжить":"Слушать")); $("play").setAttribute("aria-label",$("playt").textContent); try{ markPin(); }catch(e){} }
-function nvStop(){ if(NV.R&&NV.R.on){ NV.i=NV.R.i; NV.R.stop(); } }
+function nvStop(){ if(NV.R&&NV.R.on){ NV.i=NV.R.i; NV.R.stop(); } nvBusy(false); }
+function nvReader(){ if(NV.R) return; NV.R=NV.mod.reader(); NV.R.onPiece=(k,n)=>{ NV.i=k; if(k>=3) nvBusy(false); if(k>=Math.ceil(n*.85)) markSeen(NV.id,2); }; NV.R.onEnd=()=>{ nvBusy(false); NV.i=0; nvUI(); }; }
 async function nvToggle(){ if(NV.R&&NV.R.on){ nvStop(); nvUI(); return; }
   if(NV.id!==current.id){ NV.id=current.id; NV.list=NV.mod.pieces(ttsText(current),"ru"); NV.i=0; }
   stopSay(); a.pause(); try{ speechSynthesis.cancel(); }catch(e){}
-  if(!NV.mod.engine()){ NV.loading=true; nvUI(); try{ await NV.mod.load(); }catch(e){ NV.loading=false; NV.ok=false; drawVoiceRow(); toast("Голос без интернета не включился на этом телефоне — читает голос телефона."); ttsToggle(); return; } NV.loading=false; }
-  if(!NV.R){ NV.R=NV.mod.reader(); NV.R.onPiece=(k,n)=>{ NV.i=k; if(k>=Math.ceil(n*.85)) markSeen(NV.id,2); }; NV.R.onEnd=()=>{ NV.i=0; nvUI(); }; }
+  nvReader(); NV.R.unlock(); // right inside the tap: the iPhone allows sound only from a tap (first «Мужской» was silent, 2026-11-17)
+  if(!NV.mod.engine()){ if(NV.loading) return; NV.loading=true; nvUI(); nvBusy(true); try{ await NV.mod.load(); }catch(e){ nvBusy(false); NV.loading=false; NV.ok=false; drawVoiceRow(); toast("Голос без интернета не включился на этом телефоне — читает голос телефона."); ttsToggle(); return; } NV.loading=false; }
+  else nvBusy(true);
   const id=NV.id; NV.R.play(NV.list,NV.i,"ru",nvVoice(),VSET.rate||1).catch(()=>{ if(NV.id===id){ nvStop(); nvUI(); toast("Голос сбился. Нажмите «Слушать» ещё раз."); } }); nvUI(); }
-function nvApply(sample){ if(NV.R&&NV.R.on){ const k=NV.R.i; NV.R.stop(); NV.i=k; NV.R.play(NV.list,k,"ru",nvVoice(),VSET.rate||1).catch(()=>{ nvStop(); nvUI(); }); nvUI(); return; }
-  if(sample&&NV.mod.engine()){ NV.R=NV.R||NV.mod.reader(); const keep={l:NV.list,i:NV.i,id:NV.id}; NV.R.onEnd=()=>{ NV.list=keep.l; NV.i=keep.i; NV.id=keep.id; NV.R.onEnd=()=>{ NV.i=0; nvUI(); }; nvUI(); };
+function nvApply(sample){ if(NV.R&&NV.R.on){ NV.R.unlock(); const k=NV.R.i; NV.R.stop(); NV.i=k; NV.R.play(NV.list,k,"ru",nvVoice(),VSET.rate||1).catch(()=>{ nvStop(); nvUI(); }); nvUI(); return; }
+  if(sample&&NV.mod.engine()&&!NV.loading){ nvReader(); NV.R.unlock(); const keep={l:NV.list,i:NV.i,id:NV.id}; NV.R.onEnd=()=>{ NV.list=keep.l; NV.i=keep.i; NV.id=keep.id; NV.R.onEnd=()=>{ nvBusy(false); NV.i=0; nvUI(); }; nvUI(); };
     NV.list=["Здравствуйте! Так я буду рассказывать вам о городе."]; NV.id="sample"; NV.R.play(NV.list,0,"ru",nvVoice(),VSET.rate||1).catch(()=>{}); } }
 function nvDrawRow(){ const v=nvVoice(), g=v[0]==="F"?"f":"m";
   $("vf").setAttribute("aria-pressed",String(g==="f")); $("vm").setAttribute("aria-pressed",String(g==="m")); $("vnext").hidden=false;
