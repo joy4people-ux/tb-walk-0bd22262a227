@@ -674,7 +674,104 @@ function ttsClean(t){ const R={I:1,V:5,X:10}; const rom=s=>{ let n=0; for(let k=
   return t.replace(/(\d{3,4})\s*[–—-]\s*(\d{2,4})/g,(m,x,y)=>{ if(y.length<x.length) y=x.slice(0,x.length-y.length)+y; return +y-+x<=3?x+" и "+y:x+" — "+y; })
     .replace(/(^|[\s(«])([IVX]{1,5})(?=[\s,.;:)»]|$)/g,(m,p,r)=>/^(?=[IVX])(X{0,3})(IX|IV|V?I{0,3})$/.test(r)&&r.length>0?p+rom(r):m)
     .replace(/(^|[\s(])т\.\s?е\./g,"$1то есть").replace(/(^|[\s(])т\.\s?н\./g,"$1так называемый").replace(/(^|[\s(])и т\.\s?д\./g,"$1и так далее").replace(/(^|[\s(])и т\.\s?п\./g,"$1и тому подобное").replace(/(^|[\s(])ок\.\s/g,"$1около ")
-    .replace(/[«»"“”„]/g,"").replace(/\s*[\/|]\s*/g,", "); }
+    .replace(/[«»"“”„]/g,"").replace(/\s*[\/|]\s*/g,", ").replace(/^[\s\S]*$/,s=>ruNumbers(s)); } // numbers and dates → words (scripts/ru-numbers.js)
+// Numbers and dates in Russian story texts → words, so the voice reads them (Owner 2026-11-17: the female voice read
+// a date «как набор русских букв»). Inlined into the map page by build-sample.mjs; used for the offline voice and the phone voice.
+// Rules: the noun after the number decides the case of the ordinal («в 1755 году» → «в тысяча семьсот пятьдесят пятом году»,
+// «18 века» → «восемнадцатого века», «1 ноября» → «первого ноября»); suffixes «-х», «-е», «-го», «-м» likewise; a range
+// («1910–1920 годах», «20–21 веков») gives each number the singular of that case; other numbers → cardinal words.
+function ruNumbers(text) {
+  const U = ["", "один", "два", "три", "четыре", "пять", "шесть", "семь", "восемь", "девять", "десять", "одиннадцать", "двенадцать", "тринадцать",
+    "четырнадцать", "пятнадцать", "шестнадцать", "семнадцать", "восемнадцать", "девятнадцать"];
+  const T = ["", "", "двадцать", "тридцать", "сорок", "пятьдесят", "шестьдесят", "семьдесят", "восемьдесят", "девяносто"];
+  const H = ["", "сто", "двести", "триста", "четыреста", "пятьсот", "шестьсот", "семьсот", "восемьсот", "девятьсот"];
+  // ordinal stems: [stem, type] — type h: -ый, o: -ой, t: третий
+  const OU = [null, ["перв", "h"], ["втор", "o"], ["трет", "t"], ["четвёрт", "h"], ["пят", "h"], ["шест", "o"], ["седьм", "o"], ["восьм", "o"], ["девят", "h"],
+    ["десят", "h"], ["одиннадцат", "h"], ["двенадцат", "h"], ["тринадцат", "h"], ["четырнадцат", "h"], ["пятнадцат", "h"], ["шестнадцат", "h"],
+    ["семнадцат", "h"], ["восемнадцат", "h"], ["девятнадцат", "h"]];
+  const OT = [null, null, ["двадцат", "h"], ["тридцат", "h"], ["сороков", "o"], ["пятидесят", "h"], ["шестидесят", "h"], ["семидесят", "h"], ["восьмидесят", "h"], ["девяност", "h"]];
+  const OH = [null, ["сот", "h"], ["двухсот", "h"], ["трёхсот", "h"], ["четырёхсот", "h"], ["пятисот", "h"], ["шестисот", "h"], ["семисот", "h"], ["восьмисот", "h"], ["девятисот", "h"]];
+  const GEN = { 1: "одно", 2: "двух", 3: "трёх", 4: "четырёх", 5: "пяти", 6: "шести", 7: "семи", 8: "восьми", 9: "девяти", 10: "десяти" };
+  // case codes: n nom m, g gen, d dat, p prep, i instr, nf nom f, af acc f, gf gen f, nn nom n, np nom pl, gp gen/prep pl, ip instr pl
+  const END = {
+    h: { n: "ый", g: "ого", d: "ому", p: "ом", i: "ым", nf: "ая", af: "ую", gf: "ой", nn: "ое", np: "ые", gp: "ых", ip: "ыми" },
+    o: { n: "ой", g: "ого", d: "ому", p: "ом", i: "ым", nf: "ая", af: "ую", gf: "ой", nn: "ое", np: "ые", gp: "ых", ip: "ыми" },
+    t: { n: "ий", g: "ьего", d: "ьему", p: "ьем", i: "ьим", nf: "ья", af: "ью", gf: "ьей", nn: "ье", np: "ьи", gp: "ьих", ip: "ьими" } };
+  const ord = (o, c) => o[0] + END[o[1]][c];
+  function under1000(n, fem) {
+    const w = []; if (n >= 100) { w.push(H[Math.floor(n / 100)]); n %= 100; }
+    if (n >= 20) { w.push(T[Math.floor(n / 10)]); n %= 10; }
+    if (n > 0) w.push(fem && n === 1 ? "одна" : fem && n === 2 ? "две" : U[n]);
+    return w.join(" ");
+  }
+  function plural(n, one, few, many) { const a = n % 100, b = n % 10; if (a >= 11 && a <= 14) return many; if (b === 1) return one; if (b >= 2 && b <= 4) return few; return many; }
+  function card(n) {
+    if (n === 0) return "ноль";
+    const w = []; const mil = Math.floor(n / 1e6), th = Math.floor((n % 1e6) / 1000), r = n % 1000;
+    if (mil) w.push(under1000(mil, false), plural(mil, "миллион", "миллиона", "миллионов"));
+    if (th) { if (th !== 1) w.push(under1000(th, true)); w.push(plural(th, "тысяча", "тысячи", "тысяч")); } // 1755 → «тысяча семьсот…»
+    if (r) w.push(under1000(r, false));
+    return w.join(" ").replace(/\s+/g, " ").trim();
+  }
+  function ordinal(n, c) {
+    if (n <= 0 || n >= 1e6) return card(n);
+    const r = n % 1000, th = Math.floor(n / 1000);
+    if (r === 0) { const pre = th === 1 ? "" : (GEN[th] || card(th).replace(/ /g, "")); return ord([pre + "тысячн", "h"], c); }
+    const head = th ? card(th * 1000) + " " : ""; let last;
+    const h = Math.floor(r / 100), t2 = r % 100;
+    if (t2 === 0) last = ord(OH[h], c);
+    else { const hw = h ? H[h] + " " : "";
+      if (t2 < 20) last = hw + ord(OU[t2], c);
+      else if (t2 % 10 === 0) last = hw + ord(OT[t2 / 10], c);
+      else last = hw + T[Math.floor(t2 / 10)] + " " + ord(OU[t2 % 10], c); }
+    return (head + last).trim();
+  }
+  const MONTHS = "января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря";
+  // noun → case of the ordinal (singular); plural nouns map to singular cases for ranges and to plural for one number
+  const NOUN = { "год": "n", "года": "g", "году": "p", "годом": "i", "годы": "np", "годов": "gp", "годах": "gp", "годами": "ip", "гг": "gp",
+    "век": "n", "века": "g", "веке": "p", "веку": "d", "веком": "i", "веков": "gp", "веках": "gp", "веками": "ip", "вв": "gp",
+    "тысячелетие": "nn", "тысячелетия": "g", "тысячелетии": "p", "этаж": "n", "этажа": "g", "этаже": "p",
+    "место": "nn", "места": "g", "месте": "p", "номер": null };
+  const SING = { np: "n", gp: "g", ip: "i" }; // range «1910–1920 годах»: each number in the singular of that case → «десятом — двадцатом»
+  const PL_SING_CASE = { "годах": "p", "веках": "p", "годов": "g", "веков": "g", "годами": "i", "веками": "i", "годы": "n", "века": "g", "гг": "p", "вв": "p" };
+  const SUF = { "й": "n", "ый": "n", "ой": "n", "ий": "n", "го": "g", "ого": "g", "му": "d", "ому": "d", "м": "p", "ом": "p", "ым": "i",
+    "х": "gp", "ых": "gp", "е": "np", "ые": "np", "я": "nf", "ая": "nf", "ю": "af", "ую": "af", "ми": "ip", "ыми": "ip" };
+  const caseFor = (noun, prev) => { const c = NOUN[noun.toLowerCase()]; if (c === "p" && /^к$/i.test(prev || "")) return "d"; return c; };
+  let t = String(text);
+  t = t.replace(/(\d)[   ](?=\d{3}\b)/g, "$1"); // 10 000 → 10000
+  t = t.replace(/(\d+)\s*%/g, (m, n) => card(+n) + " " + plural(+n, "процент", "процента", "процентов"));
+  // abbreviations: «в 1998 г.» → «в 1998 году», «XVIII в.» → «18 век»
+  t = t.replace(/(\d{1,4})\s*[–—-]\s*(\d{1,4})\s*гг\./g, "$1–$2 годах").replace(/(\d{1,2})\s*[–—-]\s*(\d{1,2})\s*вв\./g, "$1–$2 веках");
+  t = t.replace(/(^|\s)(\S+\s+)?(\d{1,4})\s*г\.(?=\s|$|[,;:)])/g, (m, sp, prev, n) => { const p = (prev || "").trim().toLowerCase();
+    return sp + (prev || "") + n + " " + (/^(в|к)$/.test(p) ? "году" : /^(с|до|после|около|от|начала|конца|середины)$/.test(p) ? "года" : "год"); });
+  t = t.replace(/(^|\s)(\S+\s+)?(\d{1,2})\s*в\.(?=\s|$|[,;:)])/g, (m, sp, prev, n) => { const p = (prev || "").trim().toLowerCase();
+    return sp + (prev || "") + n + " " + (/^в$/.test(p) ? "веке" : /^(с|до|после|около|от|начала|конца|середины)$/.test(p) ? "века" : "век"); });
+  // «с 1910 по 1920 год(ы)» → первое число в родительном: «с тысяча девятьсот десятого по … год»
+  t = t.replace(/(^|\s)([сС])\s+(\d{1,4})\s+по\s+(\d{1,4})\s+(год|годы|века|век)(?![а-яё])/g, (m, sp, s0, a, b, noun) => {
+    const c = /^год$|^век$/.test(noun) ? "n" : /^годы$/.test(noun) ? "n" : "g"; return sp + s0 + " " + ordinal(+a, "g") + " по " + ordinal(+b, c) + " " + (noun === "годы" ? "год" : noun); });
+  // ranges with a noun: 1910–1920 годах · 1758 и 1759 годах · 20–21 веков · с 1910 по 1920 год(ы)
+  t = t.replace(/(^|[^\d])(\d{1,4})(?:-[а-я]{1,3})?\s*(—|–|-|\sи\s|\sили\s)\s*(\d{1,4})(?:-[а-я]{1,3})?\s+(годах|годов|годами|годы|года|веках|веков|веками|века|гг|вв)\.?(?=[\s,.;:!?)]|$)/gi,
+    (m, pre, a, sep, b, noun) => { const c = PL_SING_CASE[noun.toLowerCase()] || "g"; const s = /и/.test(sep) ? " и " : /или/.test(sep) ? " или " : " — ";
+      const nn = /^гг$/i.test(noun) ? "годах" : /^вв$/i.test(noun) ? "веках" : noun; return pre + ordinal(+a, c) + s + ordinal(+b, c) + " " + nn; });
+  // number with ordinal suffix: 1960-е, 1920-х, 2-го, 5-м, 3-я
+  t = t.replace(/(\d+)-(ый|ой|ий|й|ого|го|ому|му|ом|м|ым|ых|х|ые|е|ая|я|ую|ю|ыми|ми)(?![а-яё])/gi, (m, n, s) => ordinal(+n, SUF[s.toLowerCase()] || "n"));
+  // date: 1 ноября → первого ноября
+  t = t.replace(new RegExp("(^|[^\\d])(\\d{1,2})\\s+(" + MONTHS + ")", "gi"), (m, pre, d, mon) => pre + ordinal(+d, "g") + " " + mon);
+  // number + noun: в 1755 году, 18 века, 1755 года, к 1800 году
+  t = t.replace(/(^|[^\d])(\S*?)(\s*)(\d{1,4})\s+(год|года|году|годом|годы|годов|годах|годами|век|века|веке|веку|веком|веков|веках|веками|тысячелетие|тысячелетия|тысячелетии|этаж|этажа|этаже)(?![а-яё])/gi,
+    (m, pre, prevWord, sp, n, noun) => { prevWord = prevWord || ""; sp = sp || ""; if (/d$/.test(prevWord)) return m; const c = caseFor(noun, prevWord.replace(/[^а-яё]/gi, "")); return pre + prevWord + sp + ordinal(+n, c || "n") + " " + noun; });
+  t = t.replace(/(\d{1,4})\s*(гг|г|вв|в)\.(?=\s|$|[,;:)])/g, (m, n, a) => ordinal(+n, a[0] === "г" ? "n" : "n") + " " + (a[0] === "г" ? "год" : "век"));
+  // decimals: 2,5 → две целых пять десятых
+  t = t.replace(/(\d+)[,.](\d{1,2})(?!\d)/g, (m, a, b) => { const den = b.length === 1 ? "десят" : "сот"; const nb = +b;
+    return (+a === 1 ? "одна" : +a === 2 ? "две" : card(+a)) + " " + (+a % 10 === 1 && +a % 100 !== 11 ? "целая" : "целых") + " " + (nb === 1 ? "одна" : nb === 2 ? "две" : card(nb)) + " " + den + (nb % 10 === 1 && nb % 100 !== 11 ? "ая" : "ых"); });
+  // feminine counted words: «2 тысячи» → «две тысячи», «1 церковь» stays rare — only тысяча/неделя/минута/секунда/улица/башня
+  t = t.replace(/(\d+)(\s+)(тысяч[аи]?|недел[июь]|минут[ыа]?|секунд[ыа]?|башн[ия]|церкв[иь]|улиц[ыа]?)(?![а-яё])/gi, (m, n, sp, w) => (+n < 1000 ? under1000(+n, true) : card(+n)) + sp + w);
+  // everything else: cardinal
+  t = t.replace(/\d+/g, (n) => (n.length > 9 ? n.split("").map((d) => card(+d)).join(" ") : card(+n)));
+  return t;
+}
+
+
 function ttsText(p){ return ttsClean((p.title?p.title+". ":"")+String(p.text||"").replace(/\(Черновик[^)]*\)/g,"").replace(/\s+/g," ").trim()); }
 // Short pieces: Chrome's Google voice cuts off after ~14 s, iPhone stops long texts.
 function ttsChunks(t){ const out=[]; (t.match(/[^.!?…;]+[.!?…;]+[»"”)]*\s*|[^.!?…;]+$/g)||[t]).forEach(x=>{ x=x.trim(); if(!x) return; if(out.length&&out[out.length-1].length+x.length<170) out[out.length-1]+=" "+x; else out.push(x); }); return out; }
@@ -716,10 +813,10 @@ function stepRate(d){ VSET.rate=Math.min(1.8,Math.max(0.6,Math.round(((VSET.rate
 // ---- Voice without internet (Owner 2026-11-16): one voice for every story, made inside the phone by voice/voice-engine.mjs.
 // One button «Скачать всё для поездки» stores the voice and this city's photos; after that the map needs no internet.
 // Phones without a graphics chip for the browser (no WebGPU) keep the phone's own voice.
-var NV={base:"../voice/",engine:"voice-engine.012b3062.mjs",mod:null,can:"",ok:false,have:false,R:null,list:[],i:0,id:null,loading:false};
+var NV={base:"../voice/",engine:"voice-engine.41c626b6.mjs",mod:null,can:"",ok:false,have:false,R:null,list:[],i:0,id:null,loading:false};
 const NV_NAMES={M1:"Мужской 1",M2:"Мужской 2",M3:"Мужской 3",M4:"Мужской 4",M5:"Мужской 5",F1:"Женский 1",F2:"Женский 2",F3:"Женский 3",F4:"Женский 4",F5:"Женский 5"};
 const TRIP_PHOTO_BYTES=59975100, TRIP_CACHE="tb-trip-photos-"+location.pathname.replace(/[^a-z]/gi,"").slice(-24);
-const BUILD="17.11 15:28"; // shown on the card, so a screenshot tells which version the phone really runs (2026-11-17)
+const BUILD="17.11 15:51"; // shown on the card, so a screenshot tells which version the phone really runs (2026-11-17)
 // Owner 2026-11-17: only two voices, one male and one female, lower and calm («писклявый голос слушать долго невозможно»).
 // Chosen by measured pitch of the samples: Мужской 2 ≈ 90 Hz (lowest male; Мужской 1 was 132 Hz), Женский 5 ≈ 165 Hz (lowest female).
 const NV_MALE="M2", NV_FEMALE="F5";
@@ -732,8 +829,9 @@ async function nvInit(){ if(!NV.base||!("caches" in window)) return;
   // Crash guard (iPhone 2026-11-17: the page was reset while the voice loaded). A mark is set while the voice switches on and
   // during its first pieces; if the page starts again with the mark still there, the page had been reset — this phone reads with its own voice.
   // A reset with the graphics chip → next time the processor way (no message needed); a reset with the processor → the phone's own voice.
-  try{ const was=localStorage.getItem(NV_BUSY); if(was){ localStorage.removeItem(NV_BUSY); if(was==="gpu"){ localStorage.setItem("tb-nv-cpu","1"); NV.can=await NV.mod.canRun(); } else { localStorage.setItem(NV_FAIL,"1"); NV.justFailed=true; } } NV.failed=!!localStorage.getItem(NV_FAIL); }catch(e){}
+  try{ const was=localStorage.getItem(NV_BUSY); if(was){ localStorage.removeItem(NV_BUSY); if(was==="gpu"){ localStorage.setItem("tb-nv-cpu","1"); NV.can=await NV.mod.canRun(); NV.toCpu=true; } else { localStorage.setItem(NV_FAIL,"1"); NV.justFailed=true; } } NV.failed=!!localStorage.getItem(NV_FAIL); }catch(e){}
   NV.ok=!!NV.can&&NV.have&&!NV.failed; drawTrip(); if(current&&!current.audio){ drawVoiceRow(); ttsUI(); }
+  if(NV.toCpu) toast("Карта перезапустилась: видеочипу телефона не хватило памяти. Теперь голос работает через процессор — нажмите «Слушать».");
   if(NV.justFailed) toast("Голос без интернета не поместился в память этого телефона, и карта перезагрузилась. Рассказы читает голос телефона."); }
 // Version 2 of the marks (2026-11-17): the old ones were set by the graphics-chip way that reset the map; the iPhone now uses the
 // processor way, so an old mark must not keep the phone voice on (Owner's screenshot 15:23: «не поместился в память»).
