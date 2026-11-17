@@ -60,7 +60,7 @@ $("gpu").onclick = async () => {
       log("Голос включён за " + ((performance.now() - a) / 1000).toFixed(1) + " с · " + (V.engine().gpu ? "видеочип" : "процессор"), "ok"); }
     const text = "Здравствуйте! Это проверка голоса без интернета.";
     for (const [steps, label] of [[8, "обычный"], [4, "облегчённый"]]) {
-      mark("фраза, режим " + label); const a = performance.now(); const w = await V.synth(text, "ru", "M1", steps, 1);
+      mark("фраза, режим " + label); const a = performance.now(); const w = await V.synth(text, "ru", "M2", steps, 1);
       const s = stats(w, V.engine().sr); s.txt += " · до защиты: пик " + V.LAST.peak.toFixed(2) + (V.LAST.bad ? ", ИСПОРЧЕНО точек " + V.LAST.bad : ""); if (V.LAST.bad) s.ok = false; log("Фраза (" + label + "): сделана за " + ((performance.now() - a) / 1000).toFixed(1) + " с · " + s.txt, s.ok ? "ok" : "bad");
       if (steps === 8) { mark("воспроизведение фразы"); const b = ac.createBuffer(1, w.length, V.engine().sr); b.copyToChannel(w.map((x) => (Number.isFinite(x) ? x : 0)), 0);
         const src = ac.createBufferSource(); src.buffer = b; src.connect(ac.destination); src.start(); log("Играю фразу (звук " + ac.state + "). Слышно? Как звучит? — напишите Алёше."); await new Promise((r) => setTimeout(r, b.duration * 1000 + 300)); }
