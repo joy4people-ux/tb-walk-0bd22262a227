@@ -20,9 +20,14 @@ export async function manifest() {
   try { const r = await fetch(url, { cache: "no-cache" }); if (r.ok) { MANIFEST = await r.clone().json(); await c.put(url, r); return MANIFEST; } } catch (e) {}
   const h = await c.match(url); MANIFEST = h ? await h.json() : null; return MANIFEST;
 }
-// The phone can make the voice fast enough only with its graphics chip (WebGPU); without it the phone's own voice stays.
+// How the voice is made on this device: "gpu" (graphics chip, WebGPU), "cpu" (processor) or "" (too slow: the phone's own voice).
+// iPhone/iPad: processor. Measured on the Owner's iPhone 2026-11-17 (check page): switched on in 10 s, a 5.2 s phrase made in
+// 3.0 s in the lighter mode, no reset — while the graphics-chip way had reset the map. A PC's processor in the browser is too slow.
+// After a reset with the graphics chip the map asks for the processor way (localStorage "tb-nv-cpu").
+export const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 export async function canRun() {
-  if (/force-cpu/.test(location.search)) return "cpu";
+  let cpu = false; try { cpu = !!localStorage.getItem("tb-nv-cpu"); } catch (e) {}
+  if (/force-cpu/.test(location.search) || IOS || cpu) return "cpu";
   try { if (navigator.gpu && (await navigator.gpu.requestAdapter())) return "gpu"; } catch (e) {}
   return "";
 }
@@ -86,9 +91,26 @@ function externalize(bytes) {
 const readJson = async (name) => JSON.parse(new TextDecoder().decode(await readFile(name)));
 
 export function engine() { return TTS; }
+// The processor way runs in a background thread (Web Worker): made on the page itself, it froze the map for seconds
+// per phrase (found on this PC 2026-11-17). The graphics-chip way stays on the page (it hardly occupies it).
+const IN_WORKER = typeof window === "undefined";
+let WK = null, wkId = 0; const wkWait = {};
+function wk(op, args, onSay) { return new Promise((ok, no) => { const id = ++wkId; wkWait[id] = { ok, no, onSay }; WK.postMessage({ id, op, args }); }); }
 export async function load(say) {
   if (TTS) return TTS;
-  const t0 = performance.now(); const how = await canRun();
+  const how = await canRun();
+  if (how === "cpu" && !IN_WORKER && typeof Worker !== "undefined") {
+    try {
+      WK = new Worker(import.meta.url, { type: "module" });
+      WK.onmessage = (e) => { const m = e.data, w = wkWait[m.id]; if (!w) return; if (m.say) { w.onSay && w.onSay(m.say); return; } if (m.last) Object.assign(LAST, m.last); delete wkWait[m.id]; m.err ? w.no(new Error(m.err)) : w.ok(m.r); };
+      const r = await wk("load", { how }, say);
+      TTS = { ...r, remote: true }; return TTS;
+    } catch (e) { try { WK && WK.terminate(); } catch (x) {} WK = null; } // no background thread: make it on the page
+  }
+  return loadHere(how, say);
+}
+async function loadHere(how, say) {
+  const t0 = performance.now();
   let eps = how === "gpu" ? ["webgpu", "wasm"] : ["wasm"];
   const cfg = await readJson("tts.json"), indexer = await readJson("unicode_indexer.json");
   const ses = []; const names = ["duration_predictor.onnx", "text_encoder.onnx", "vector_estimator.onnx", "vocoder.onnx"];
@@ -100,7 +122,7 @@ export async function load(say) {
     catch (e) { if (eps[0] !== "webgpu") throw e; eps = ["wasm"]; ses.push(await ort.InferenceSession.create(graph, opt(eps))); }
     bytes = graph = null; await new Promise((r) => setTimeout(r, 50)); // let the phone free the file before the next one
   }
-  TTS = { cfg, indexer, dp: ses[0], enc: ses[1], est: ses[2], voc: ses[3], sr: cfg.ae.sample_rate, gpu: eps[0] === "webgpu", steps: 8, secs: ((performance.now() - t0) / 1000).toFixed(1) };
+  TTS = { cfg, indexer, dp: ses[0], enc: ses[1], est: ses[2], voc: ses[3], sr: cfg.ae.sample_rate, gpu: eps[0] === "webgpu", steps: eps[0] === "webgpu" ? 8 : 4 /* processor: lighter mode from the start */, secs: ((performance.now() - t0) / 1000).toFixed(1) };
   try { await synth("Да.", "ru", "M1", 2, 1); } catch (e) {} // warm the graphics chip so the first story starts sooner
   return TTS;
 }
@@ -121,7 +143,7 @@ function randn() { const u1 = Math.max(1e-4, Math.random()), u2 = Math.random();
 // One phrase at a time: the engine cannot run two at once («Session already started»), e.g. when the voice is changed mid-story.
 let queue = Promise.resolve();
 export function synth(text, lang, voiceId, steps, speed) {
-  const run = queue.then(() => synthNow(text, lang, voiceId, steps, speed));
+  const run = queue.then(() => (TTS && TTS.remote ? wk("synth", [text, lang, voiceId, steps, speed]) : synthNow(text, lang, voiceId, steps, speed)));
   queue = run.catch(() => {});
   return run;
 }
@@ -189,3 +211,12 @@ export function reader() {
   };
   return R;
 }
+
+// Inside the background thread: load and make phrases on request from the page.
+if (IN_WORKER) self.onmessage = async (e) => {
+  const { id, op, args } = e.data;
+  try {
+    if (op === "load") { const T = await loadHere(args.how, (t) => self.postMessage({ id, say: t })); self.postMessage({ id, r: { sr: T.sr, steps: T.steps, gpu: T.gpu, secs: T.secs } }); }
+    else if (op === "synth") { const w = await synth(...args); self.postMessage({ id, r: w, last: { ...LAST } }, [w.buffer]); }
+  } catch (err) { self.postMessage({ id, err: String((err && err.message) || err) }); }
+};
