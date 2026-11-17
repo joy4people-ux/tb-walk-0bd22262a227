@@ -720,7 +720,7 @@ function stepRate(d){ VSET.rate=Math.min(1.8,Math.max(0.6,Math.round(((VSET.rate
 var NV={base:"../voice/",engine:"voice-engine.012b3062.mjs",mod:null,can:"",ok:false,have:false,R:null,list:[],i:0,id:null,loading:false};
 const NV_NAMES={M1:"Мужской 1",M2:"Мужской 2",M3:"Мужской 3",M4:"Мужской 4",M5:"Мужской 5",F1:"Женский 1",F2:"Женский 2",F3:"Женский 3",F4:"Женский 4",F5:"Женский 5"};
 const TRIP_PHOTO_BYTES=131271279, TRIP_CACHE="tb-trip-photos-"+location.pathname.replace(/[^a-z]/gi,"").slice(-24);
-const BUILD="17.11 14:59"; // shown on the card, so a screenshot tells which version the phone really runs (2026-11-17)
+const BUILD="17.11 15:28"; // shown on the card, so a screenshot tells which version the phone really runs (2026-11-17)
 // Owner 2026-11-17: only two voices, one male and one female, lower and calm («писклявый голос слушать долго невозможно»).
 // Chosen by measured pitch of the samples: Мужской 2 ≈ 90 Hz (lowest male; Мужской 1 was 132 Hz), Женский 5 ≈ 165 Hz (lowest female).
 const NV_MALE="M2", NV_FEMALE="F5";
@@ -736,7 +736,9 @@ async function nvInit(){ if(!NV.base||!("caches" in window)) return;
   try{ const was=localStorage.getItem(NV_BUSY); if(was){ localStorage.removeItem(NV_BUSY); if(was==="gpu"){ localStorage.setItem("tb-nv-cpu","1"); NV.can=await NV.mod.canRun(); } else { localStorage.setItem(NV_FAIL,"1"); NV.justFailed=true; } } NV.failed=!!localStorage.getItem(NV_FAIL); }catch(e){}
   NV.ok=!!NV.can&&NV.have&&!NV.failed; drawTrip(); if(current&&!current.audio){ drawVoiceRow(); ttsUI(); }
   if(NV.justFailed) toast("Голос без интернета не поместился в память этого телефона, и карта перезагрузилась. Рассказы читает голос телефона."); }
-const NV_BUSY="tb-nv-busy", NV_FAIL="tb-nv-failed";
+// Version 2 of the marks (2026-11-17): the old ones were set by the graphics-chip way that reset the map; the iPhone now uses the
+// processor way, so an old mark must not keep the phone voice on (Owner's screenshot 15:23: «не поместился в память»).
+const NV_BUSY="tb-nv-busy2", NV_FAIL="tb-nv-failed2"; try{ localStorage.removeItem("tb-nv-busy"); localStorage.removeItem("tb-nv-failed"); }catch(e){}
 function nvBusy(on){ try{ if(on) localStorage.setItem(NV_BUSY,NV.can||"cpu"); else localStorage.removeItem(NV_BUSY); }catch(e){} }
 function nvRetry(){ try{ localStorage.removeItem(NV_FAIL); }catch(e){} NV.failed=false; NV.ok=!!NV.can&&NV.have; drawVoiceRow(); ttsUI(); toast("Пробую голос без интернета ещё раз: нажмите «Слушать»."); }
 async function drawTrip(){ const box=$("trip"); if(!box||!NV.mod) return; $("vtrip").hidden=!(NV.can&&!NV.have)||!!tripGet.on;
