@@ -696,7 +696,7 @@ function ttsApply(){ vSave(); drawVoiceRow(); if(NV&&NV.ok){ nvApply(false); ret
 function drawVoiceRow(){ const row=$("voicerow"); if(!row) return; if(NV&&NV.ok){ nvDrawRow(); return; } const all=ttsVoices(), v=ttsVoice(), g=v?vGender(v):"";
   const has={f:all.some(x=>vGender(x)==="f"),m:all.some(x=>vGender(x)==="m")};
   $("vf").setAttribute("aria-pressed",g==="f"); $("vm").setAttribute("aria-pressed",g==="m");
-  const same=all.filter(x=>vGender(x)===(g||vGender(x))); $("vnext").hidden=same.length<2;
+  const same=all.filter(x=>vGender(x)===(g||vGender(x))); $("vnext").hidden=true;
   $("vname").textContent=(v?("Сейчас: "+vLabel(v)+(all.length>1?" · голосов на телефоне: "+all.length:"")):"Русский голос на телефоне не найден — см. «Как сделать голос лучше».")+" · версия "+BUILD;
   $("vrate").textContent="×"+(VSET.rate||1).toFixed(1).replace(".",","); $("vslow").disabled=VSET.rate<=0.61; $("vfast").disabled=VSET.rate>=1.79;
   row.dataset.f=has.f?"1":""; row.dataset.m=has.m?"1":"";
@@ -718,8 +718,11 @@ function stepRate(d){ VSET.rate=Math.min(1.8,Math.max(0.6,Math.round(((VSET.rate
 var NV={base:"../voice/",engine:"voice-engine.5251e5e9.mjs",mod:null,can:"",ok:false,have:false,R:null,list:[],i:0,id:null,loading:false};
 const NV_NAMES={M1:"Мужской 1",M2:"Мужской 2",M3:"Мужской 3",M4:"Мужской 4",M5:"Мужской 5",F1:"Женский 1",F2:"Женский 2",F3:"Женский 3",F4:"Женский 4",F5:"Женский 5"};
 const TRIP_PHOTO_BYTES=247668844, TRIP_CACHE="tb-trip-photos-"+location.pathname.replace(/[^a-z]/gi,"").slice(-24);
-const BUILD="17.11 10:05"; // shown on the card, so a screenshot tells which version the phone really runs (2026-11-17)
-function nvVoice(){ return NV_NAMES[VSET.nv]?VSET.nv:"M1"; }
+const BUILD="17.11 10:40"; // shown on the card, so a screenshot tells which version the phone really runs (2026-11-17)
+// Owner 2026-11-17: only two voices, one male and one female, lower and calm («писклявый голос слушать долго невозможно»).
+// Chosen by measured pitch of the samples: Мужской 2 ≈ 90 Hz (lowest male; Мужской 1 was 132 Hz), Женский 5 ≈ 165 Hz (lowest female).
+const NV_MALE="M2", NV_FEMALE="F5";
+function nvVoice(){ return String(VSET.nv||"M")[0]==="F"?NV_FEMALE:NV_MALE; }
 function tripPhotos(){ const out=new Set(); [PHOTOS,DRAFT_PHOTOS].forEach(o=>Object.values(o||{}).forEach(l=>(l||[]).forEach(x=>x&&x.src&&out.add(new URL(x.src,location.href).href)))); return [...out]; }
 async function tripPhotosStored(){ try{ const c=await caches.open(TRIP_CACHE), l=tripPhotos(); for(let k=0;k<l.length;k+=Math.max(1,Math.floor(l.length/12))) if(!(await c.match(l[k]))) return false; return true; }catch(e){ return false; } }
 async function nvInit(){ if(!NV.base||!("caches" in window)) return;
@@ -769,13 +772,13 @@ function nvApply(sample){ if(NV.R&&NV.R.on){ NV.R.unlock(); const k=NV.R.i; NV.R
   if(sample&&NV.mod.engine()&&!NV.loading){ nvReader(); NV.R.unlock(); const keep={l:NV.list,i:NV.i,id:NV.id}; NV.R.onEnd=()=>{ NV.list=keep.l; NV.i=keep.i; NV.id=keep.id; NV.R.onEnd=()=>{ nvBusy(false); NV.i=0; nvUI(); }; nvUI(); };
     NV.list=["Здравствуйте! Так я буду рассказывать вам о городе."]; NV.id="sample"; NV.R.play(NV.list,0,"ru",nvVoice(),VSET.rate||1).catch(()=>{}); } }
 function nvDrawRow(){ const v=nvVoice(), g=v[0]==="F"?"f":"m";
-  $("vf").setAttribute("aria-pressed",String(g==="f")); $("vm").setAttribute("aria-pressed",String(g==="m")); $("vnext").hidden=false;
-  $("vname").textContent="Сейчас: "+NV_NAMES[v]+" · голос без интернета · версия "+BUILD;
+  $("vf").setAttribute("aria-pressed",String(g==="f")); $("vm").setAttribute("aria-pressed",String(g==="m")); $("vnext").hidden=true;
+  $("vname").textContent="Сейчас: "+(g==="f"?"женский":"мужской")+" голос без интернета · версия "+BUILD;
   $("vrate").textContent="×"+(VSET.rate||1).toFixed(1).replace(".",","); $("vslow").disabled=(VSET.rate||1)<=0.71; $("vfast").disabled=(VSET.rate||1)>=1.49;
-  const L=$("vlist"); if(L){ L.innerHTML=""; Object.keys(NV_NAMES).forEach(id=>{ const b=document.createElement("button"); b.type="button"; b.className="vchip"; b.setAttribute("aria-pressed",String(id===v)); b.textContent=NV_NAMES[id]; b.onclick=()=>{ VSET.nv=id; vSave(); nvDrawRow(); nvApply(true); }; L.appendChild(b); }); }
+  const L=$("vlist"); if(L) L.textContent="Два голоса — мужской и женский, спокойные и негромкие. Работают без интернета.";
   const T=$("vtech"); if(T) T.textContent=""; }
-function nvPick(gx){ const cur=nvVoice(); if((cur[0]==="F")!==(gx==="f")) VSET.nv=gx==="f"?"F1":"M1"; vSave(); nvDrawRow(); nvApply(true); }
-function nvNext(){ const cur=nvVoice(), list=NV.mod.VOICES[cur[0]==="F"?"f":"m"]; VSET.nv=list[(list.indexOf(cur)+1)%list.length]; vSave(); nvDrawRow(); nvApply(true); }
+function nvPick(gx){ const cur=nvVoice(); if((cur[0]==="F")!==(gx==="f")) VSET.nv=gx==="f"?NV_FEMALE:NV_MALE; vSave(); nvDrawRow(); nvApply(true); }
+function nvNext(){}
 function setPlayUI(){ const on=!a.paused&&!a.ended; $("ic").innerHTML=on?ICON.pause:ICON.play; $("playt").textContent=on?"Пауза":(a.ended?"Ещё раз":(a.currentTime>0.5?"Продолжить с "+fmt(a.currentTime):"Слушать")); $("play").setAttribute("aria-label",$("playt").textContent); }
 // The building of the chosen place is shaded in terracotta, so it is clear which building the story is about.
 let bldHi=null;
