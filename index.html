@@ -345,7 +345,7 @@ ol.steps li::before{content:counter(s);width:40px;height:40px;border-radius:50%;
 </div>
 
 <script src="leaflet.min.js"></script>
-<script>(function(){var b=document.getElementById("start");if(b){b.dataset.t=b.textContent;b.textContent="Загружаю карту…";b.disabled=true;b.style.opacity=".75";}var t=document.getElementById("tripget");if(t){t.disabled=true;t.style.opacity=".75";}document.querySelectorAll(".say").forEach(function(s){if(!s.textContent.trim())s.innerHTML="<span>"+(s.dataset.label||"Слушать")+"</span>";});})();</script><script src="data.874335cb.js"></script><script>
+<script>(function(){var b=document.getElementById("start");if(b){b.dataset.t=b.textContent;b.textContent="Загружаю карту…";b.disabled=true;b.style.opacity=".75";}var t=document.getElementById("tripget");if(t){t.disabled=true;t.style.opacity=".75";}document.querySelectorAll(".say").forEach(function(s){if(!s.textContent.trim())s.innerHTML="<span>"+(s.dataset.label||"Слушать")+"</span>";});})();</script><script src="data.d6351fa9.js"></script><script>
 
 // Light map format (scripts/compact-map.mjs): whole numbers in 1/100000 of a degree, first point from the corner, then steps.
 if(MAP&&MAP.v===2){ const o=MAP.o, dec=l=>{ const r=[]; let a=0,b=0; for(let i=0;i<l.length;i+=2){ a+=l[i]; b+=l[i+1]; r.push([o[0]+a/1e5,o[1]+b/1e5]); } return r; };
@@ -605,7 +605,7 @@ function litFit(e){ let k=0; try{ k=Math.min(e.ts.length,Math.floor(e.p.getTotal
   e.ts.forEach((x,i)=>{ if(i<k){ x.style.display=""; x.firstChild.setAttribute("startOffset",((i+.5)/k*100).toFixed(1)+"%"); } else x.style.display="none"; });
   if(k>0||!e.main) e.tag.remove(); else e.tag.addTo(map); }
 map.on("zoomend",()=>setTimeout(()=>[pickSt,walkSt].forEach(s=>{ if(s&&s.labs) s.labs.forEach(litFit); }),90));
-function pickStreet(name,p){ const place=streetPlace(name,p);
+function pickStreet(name,p){ const place=streetPlace(name,p); try{ const q=L.latLng(p); pickStreet.last={id:place.id,name,p:[q.lat,q.lng]}; }catch(e){}
   if((walkSt&&walkSt.id===place.id)||(gps.street===name)){ dropSt(pickSt); pickSt=null; return place; }
   if(pickSt&&pickSt.id===place.id) return place; dropSt(pickSt); pickSt=drawStreet(place,name,p); return place; }
 function walkStreet(name,p){ const place=streetPlace(name,p); if(walkSt&&walkSt.id===place.id) return;
@@ -804,19 +804,36 @@ function ruFold(s) { return ruPlain(s).toLowerCase().replace(/ё/g, "е"); }
 // Copy the marks of `marked` onto `word` (same letters apart from ё/е and case); returns `word` unchanged if they differ.
 function ruCopyMarks(word, marked) {
   if (ruFold(word) !== ruFold(marked)) return word;
-  var out = "", k = 0;
-  for (var i = 0; i < marked.length; i++) { var c = marked[i]; if (c === RU_MARK) { out += RU_MARK; continue; } const o = word[k++]; out += (c === "ё" || c === "Ё") && (o === "е" || o === "Е") ? (o === "Е" ? "Ё" : "ё") : o; } // «её», «ещё»: the voice needs the ё (2026-11-18)
+  var out = "", k = 0; word = ruPlain(word);
+  for (var i = 0; i < marked.length; i++) { var c = marked[i]; if (c === RU_MARK) { out += RU_MARK; continue; } var o = word[k++]; out += (c === "ё" || c === "Ё") && (o === "е" || o === "Е") ? (o === "Е" ? "Ё" : "ё") : o; } // «её», «ещё»: the voice needs the ё (2026-11-18)
   return out;
 }
 var RU_WORD = /[А-Яа-яЁё́]+/g;
 // `voice` is the text after cleaning and numbers → words (no marks); `marked` is the source text with marks;
 // words that came from numbers or abbreviations take their marks from `extra` (folded word → marked word).
+// Words of the two texts are paired by a full alignment (longest common sequence), 2026-11-18: the old step-by-step search
+// could jump ahead on a repeated word («его», «года») and then left the rest of the paragraph without marks (≈6% of words,
+// Owner heard «по́строил»). Very long texts fall back to the step-by-step search.
+function ruPairs(a, b) {
+  var n = a.length, m = b.length, P = new Array(n);
+  if (!n || !m || n * m > 4e6) return null;
+  var T = new Uint16Array((n + 1) * (m + 1)), W = m + 1, i, k;
+  for (i = n - 1; i >= 0; i--) for (k = m - 1; k >= 0; k--)
+    T[i * W + k] = a[i] === b[k] ? T[(i + 1) * W + k + 1] + 1 : Math.max(T[(i + 1) * W + k], T[i * W + k + 1]);
+  i = 0; k = 0;
+  while (i < n && k < m) { if (a[i] === b[k]) { P[i++] = k++; } else if (T[(i + 1) * W + k] >= T[i * W + k + 1]) i++; else k++; }
+  return P;
+}
 function ruRestress(voice, marked, extra) {
-  var mk = String(marked).match(RU_WORD) || [], j = 0;
+  var mk = String(marked).match(RU_WORD) || [], vw = String(voice).match(RU_WORD) || [];
+  var P = ruPairs(vw.map(ruFold), mk.map(ruFold)), j = 0, at = 0;
   return String(voice).replace(RU_WORD, function (w) {
-    var f = ruFold(w);
-    for (var k = j; k < Math.min(mk.length, j + 6); k++) if (ruFold(mk[k]) === f) { j = k + 1; return ruCopyMarks(w, mk[k]); }
-    var e = extra && extra[f]; return e ? ruCopyMarks(w, e) : w;
+    var f = ruFold(w), idx = at++;
+    var e = extra && extra[f], hit = null;
+    if (P) { if (P[idx] != null) hit = mk[P[idx]]; }
+    else for (var k = j; k < Math.min(mk.length, j + 6); k++) if (ruFold(mk[k]) === f) { j = k + 1; hit = mk[k]; break; }
+    if (hit && (hit.indexOf(RU_MARK) >= 0 || /[ёЁ]/.test(hit) || !e)) return ruCopyMarks(w, hit); // an unmarked pair (a street title) takes the word list
+    return e ? ruCopyMarks(w, e) : w;
   });
 }
 
@@ -878,10 +895,10 @@ function stepRate(d){ VSET.rate=Math.min(1.8,Math.max(0.6,Math.round(((VSET.rate
 // ---- Voice without internet (Owner 2026-11-16): one voice for every story, made inside the phone by voice/voice-engine.mjs.
 // One button «Скачать всё для поездки» stores the voice and this city's photos; after that the map needs no internet.
 // Phones without a graphics chip for the browser (no WebGPU) keep the phone's own voice.
-var NV={base:"voice/",engine:"voice-engine.c0b302e7.mjs",mod:null,can:"",ok:false,have:false,R:null,list:[],i:0,id:null,loading:false};
+var NV={base:"voice/",engine:"voice-engine.dc6474d3.mjs",mod:null,can:"",ok:false,have:false,R:null,list:[],i:0,id:null,loading:false};
 const NV_NAMES={M1:"Мужской 1",M2:"Мужской 2",M3:"Мужской 3",M4:"Мужской 4",M5:"Мужской 5",F1:"Женский 1",F2:"Женский 2",F3:"Женский 3",F4:"Женский 4",F5:"Женский 5"};
 const TRIP_PHOTO_BYTES=59975100, TRIP_CACHE="tb-trip-photos-"+location.pathname.replace(/[^a-z]/gi,"").slice(-24);
-const BUILD="18.11 08:56"; // shown on the card, so a screenshot tells which version the phone really runs (2026-11-17)
+const BUILD="18.11 09:44"; // shown on the card, so a screenshot tells which version the phone really runs (2026-11-17)
 // Owner 2026-11-17: only two voices, one male and one female, lower and calm («писклявый голос слушать долго невозможно»).
 // Chosen by measured pitch of the samples: Мужской 2 ≈ 90 Hz (lowest male; Мужской 1 was 132 Hz), Женский 5 ≈ 165 Hz (lowest female).
 const NV_MALE="M2", NV_FEMALE="F5";
@@ -938,7 +955,8 @@ function nvStop(){ if(NV.R&&NV.R.on){ NV.i=NV.R.i; NV.R.stop(); } nvBusy(false);
 // (2) the crash mark stays on for the whole story (before: only its first pieces), so a reset at any moment switches that
 // phone to the lighter processor way; it is taken off when the story ends, is paused, or the phone leaves the page normally.
 const LIVE_KEY="tb-live-v1";
-function liveSave(){ try{ if(NV.id&&current&&NV.id===current.id&&PLACES.some(x=>x.id===NV.id)) localStorage.setItem(LIVE_KEY,JSON.stringify({id:NV.id,i:NV.i,t:Date.now(),p:location.pathname})); }catch(e){} }
+function liveSave(){ try{ if(!NV.id||!current||NV.id!==current.id) return; const s=pickStreet.last&&pickStreet.last.id===NV.id?pickStreet.last:null; // streets too (2026-11-18: the Owner's reset was on a street)
+  if(s||PLACES.some(x=>x.id===NV.id)) localStorage.setItem(LIVE_KEY,JSON.stringify({id:NV.id,i:NV.i,t:Date.now(),p:location.pathname,st:s&&s.name,at:s&&s.p})); }catch(e){} }
 function liveClear(){ try{ localStorage.removeItem(LIVE_KEY); }catch(e){} }
 function nvReader(){ if(NV.R) return; NV.R=NV.mod.reader(); NV.R.onPiece=(k,n)=>{ NV.i=k; liveSave(); if(k>=Math.ceil(n*.85)) markSeen(NV.id,2); }; NV.R.onEnd=()=>{ nvBusy(false); liveClear(); NV.i=0; nvUI(); }; }
 document.addEventListener("visibilitychange",()=>{ if(document.hidden) nvBusy(false); else if(NV.R&&NV.R.on) nvBusy(true); });
@@ -1256,7 +1274,8 @@ window.__sample={map,select,PLACES,a,say,SAY,walk,saved:()=>saved,walkers,lines}
 // The map is ready: «Открыть карту» works again (the light first screen showed «Загружаю карту…» while the stories loaded).
 { const b=$("start"); if(b.dataset.t){ b.textContent=b.dataset.t; b.disabled=false; b.style.opacity=""; } const t=$("tripget"); if(t){ t.style.opacity=""; if(!tripGet.on) t.disabled=false; } }
 // Back to the story after a reset or a reopen within 20 minutes: the map opens at that place, «Слушать» goes on from that phrase.
-try{ const L=JSON.parse(localStorage.getItem(LIVE_KEY)||"null"), p=L&&L.p===location.pathname&&Date.now()-L.t<20*60e3&&PLACES.find(x=>x.id===L.id);
-  if(p){ NV.back={id:p.id,i:L.i||0}; $("start").click(); select(p); setTimeout(()=>toast("Вы слушали: "+p.title+". Нажмите «Слушать» — рассказ пойдёт с того места, где остановился."),300); } }catch(e){}
+try{ const B=JSON.parse(localStorage.getItem(LIVE_KEY)||"null"), ok=B&&B.p===location.pathname&&Date.now()-B.t<20*60e3;
+  const p=ok&&(B.st&&B.at?pickStreet(B.st,B.at):PLACES.find(x=>x.id===B.id));
+  if(p){ NV.back={id:p.id,i:B.i||0}; $("start").click(); select(p); setTimeout(()=>toast("Вы слушали: "+p.title+". Нажмите «Слушать» — рассказ пойдёт с того места, где остановился."),300); } }catch(e){}
 </script>
 </body></html>
