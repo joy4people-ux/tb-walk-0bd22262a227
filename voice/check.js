@@ -58,7 +58,7 @@ $("gpu").onclick = async () => {
     if (!V.engine()) { mark("включение голоса" + (CPU ? " (процессор)" : ""));
       const a = performance.now(); await V.load((s) => { mark(s + (CPU ? " (процессор)" : "")); log(s); });
       log("Голос включён за " + ((performance.now() - a) / 1000).toFixed(1) + " с · " + (V.engine().gpu ? "видеочип" : "процессор"), "ok"); }
-    const text = "Здравствуйте! Это проверка голоса без интернета.";
+    const text = "Здра́вствуйте! Э́то прове́рка го́лоса без интерне́та."; /* stress marks by hand (Owner heard «проверкА») */
     for (const [steps, label] of [[8, "полный, как на компьютере"], [6, "телефонный"]]) {
       mark("фраза, режим " + label); const a = performance.now(); const w = await V.synth(text, "ru", "M2", steps, 1);
       const s = stats(w, V.engine().sr); s.txt += " · до защиты: пик " + V.LAST.peak.toFixed(2) + (V.LAST.bad ? ", ИСПОРЧЕНО точек " + V.LAST.bad : ""); if (V.LAST.bad) s.ok = false; log("Фраза (" + label + "): сделана за " + ((performance.now() - a) / 1000).toFixed(1) + " с · " + s.txt, s.ok ? "ok" : "bad");
