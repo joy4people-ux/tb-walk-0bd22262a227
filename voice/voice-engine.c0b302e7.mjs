@@ -5,7 +5,7 @@ import * as ort from "./ort/ort.webgpu.min.mjs";
 
 const BASE = new URL("./", import.meta.url);
 ort.env.wasm.wasmPaths = new URL("ort/", BASE).href;
-ort.env.wasm.numThreads = 1; // GitHub Pages cannot send the headers needed for threads
+ort.env.wasm.numThreads = 1; // several cores tried 2026-11-18 (isolation headers via the offline helper): no faster on the PC, map tiles at risk — not used
 export const CACHE = "tb-offline-voice-st3-v1";
 export const VOICES = { m: ["M1", "M2", "M3", "M4", "M5"], f: ["F1", "F2", "F3", "F4", "F5"] };
 export const LANGS = ["en", "ko", "ja", "ar", "bg", "cs", "da", "de", "el", "es", "et", "fi", "fr", "hi", "hr", "hu", "id", "it", "lt", "lv", "nl", "pl", "pt", "ro", "ru", "sk", "sl", "sv", "tr", "uk", "vi"];
@@ -106,6 +106,8 @@ export async function load(say) {
   if (how === "cpu" && !IN_WORKER && typeof Worker !== "undefined") {
     try {
       WK = new Worker(import.meta.url, { type: "module" });
+      // A background thread that cannot start must not leave the voice «switching on» forever (found 2026-11-18): fall back to the page.
+      WK.onerror = () => { for (const k in wkWait) { wkWait[k].no(new Error("background thread did not start")); delete wkWait[k]; } };
       WK.onmessage = (e) => { const m = e.data, w = wkWait[m.id]; if (!w) return; if (m.say) { w.onSay && w.onSay(m.say); return; } if (m.last) Object.assign(LAST, m.last); delete wkWait[m.id]; m.err ? w.no(new Error(m.err)) : w.ok(m.r); };
       const r = await wk("load", { how }, say);
       TTS = { ...r, remote: true }; return TTS;
@@ -146,12 +148,20 @@ function randn() { const u1 = Math.max(1e-4, Math.random()), u2 = Math.random();
 // Returns Float32Array samples at engine().sr. speed: 1 = normal; steps: 8 = best, 4 = lighter (about twice as fast).
 // One phrase at a time: the engine cannot run two at once («Session already started»), e.g. when the voice is changed mid-story.
 let queue = Promise.resolve();
-export function synth(text, lang, voiceId, steps, speed) {
-  const run = queue.then(() => (TTS && TTS.remote ? wk("synth", [text, lang, voiceId, steps, speed]) : synthNow(text, lang, voiceId, steps, speed)));
+/* Cancel (Owner 2026-11-17: after «Мужской»/«Женский»/speed there was a long silence — the phone first finished a phrase
+   nobody needed any more). Every phrase carries a number; cancelBefore(n) drops all phrases numbered below n, also the one
+   being made (checked between the steps), in this page and in the background thread. */
+let MIN = 0, SEQ = 0;
+export const nextJob = () => ++SEQ;
+export function cancelBefore(n) { MIN = Math.max(MIN, n); if (TTS && TTS.remote && WK) WK.postMessage({ id: 0, op: "cancel", args: [MIN] }); }
+const cancelled = () => Object.assign(new Error("cancelled"), { cancelled: true });
+export function synth(text, lang, voiceId, steps, speed, job = Infinity) {
+  const run = queue.then(() => { if (job < MIN) throw cancelled(); return TTS && TTS.remote ? wk("synth", [text, lang, voiceId, steps, speed, job]) : synthNow(text, lang, voiceId, steps, speed, job); });
   queue = run.catch(() => {});
   return run;
 }
-async function synthNow(text, lang, voiceId, steps, speed) {
+async function synthNow(text, lang, voiceId, steps, speed, job = Infinity) {
+  if (job < MIN) throw cancelled();
   const st = await style(voiceId); const p = prep(text, LANGS.includes(lang) ? lang : "na");
   const ids = new BigInt64Array(p.length); for (let j = 0; j < p.length; j++) { const cp = p.codePointAt(j); ids[j] = BigInt(cp < TTS.indexer.length ? TTS.indexer[cp] : -1); }
   const L = p.length, idsT = new ort.Tensor("int64", ids, [1, L]), maskT = new ort.Tensor("float32", new Float32Array(L).fill(1), [1, 1, L]);
@@ -162,6 +172,8 @@ async function synthNow(text, lang, voiceId, steps, speed) {
   let x = new Float32Array(dim * len); for (let i = 0; i < x.length; i++) x[i] = randn();
   const lmask = new ort.Tensor("float32", new Float32Array(len).fill(1), [1, 1, len]), tot = new ort.Tensor("float32", new Float32Array([steps]), [1]);
   for (let s = 0; s < steps; s++) {
+    if (job !== Infinity) await new Promise((r) => setTimeout(r, 0)); /* lets a «cancel» message in between the steps */
+    if (job < MIN) throw cancelled();
     const out = await TTS.est.run({ noisy_latent: new ort.Tensor("float32", x, [1, dim, len]), text_emb: emb, style_ttl: st.ttl, latent_mask: lmask, text_mask: maskT,
       current_step: new ort.Tensor("float32", new Float32Array([s]), [1]), total_step: tot });
     x = Float32Array.from(out.denoised_latent.data);
@@ -184,7 +196,7 @@ export function pieces(t, lang) {
 
 // A reader that plays pieces one after another, making the next while the current one sounds.
 export function reader() {
-  let AC = null, srcs = [], token = 0;
+  let AC = null, srcs = [], token = 0; const CUES = {};
   const R = { on: false, i: 0, made: 0, sound: 0, onPiece: null, onEnd: null, onStat: null,
     // Must be called right inside the tap, before any waiting: the iPhone lets a page make sound only from a tap.
     // The first tap on «Мужской» was silent because the sound was switched on after the voice had loaded (Owner, 2026-11-17).
@@ -194,31 +206,60 @@ export function reader() {
       AC = AC || new (window.AudioContext || window.webkitAudioContext)();
       try { AC.resume(); const s = AC.createBufferSource(); s.buffer = AC.createBuffer(1, 1, 22050); s.connect(AC.destination); s.start(0); } catch (e) {}
     },
-    async play(list, from, lang, voiceId, speed) {
+    // cue: a short recorded phrase (AudioBuffer) said at once, e.g. «Хорошо, дальше рассказываю я» after a voice press;
+    // the story then goes on with a short first part, made while the cue sounds.
+    async play(list, from, lang, voiceId, speed, cue) {
       R.stop(); const my = ++token; R.on = true; R.i = from;
       R.unlock(); try { await AC.resume(); } catch (e) {}
-      let when = AC.currentTime + 0.05, first = true;
-      for (let k = from; k < list.length && my === token; k++) {
-        const a = performance.now(); const w = await synth(list[k], lang, voiceId, TTS.steps, speed); if (my !== token) return;
-        R.made += performance.now() - a; R.sound += w.length / TTS.sr;
-        if (TTS.steps > 6 && R.made / 1000 > R.sound * 0.85) TTS.steps = 6; // slow phone: a little lighter, never the robotic 4 steps (Owner 2026-11-17)
-        const buf = AC.createBuffer(1, w.length, TTS.sr); buf.copyToChannel(w, 0);
-        const s = AC.createBufferSource(); s.buffer = buf; s.connect(AC.destination);
-        when = Math.max(when, AC.currentTime + 0.02); s.start(when);
-        const idx = k; s.onended = () => { if (my !== token) return; R.i = idx + 1; R.onPiece && R.onPiece(idx + 1, list.length); if (idx + 1 >= list.length) { R.on = false; R.onEnd && R.onEnd(); } };
-        srcs.push(s); when += buf.duration + 0.22;
-        if (first) { first = false; R.onStat && R.onStat(); }
-        while (my === token && when - AC.currentTime > 20) await new Promise((r) => setTimeout(r, 300));
-      }
+      let when = AC.currentTime + 0.03;
+      if (cue) { const s = AC.createBufferSource(); s.buffer = cue; s.connect(AC.destination); s.start(when); srcs.push({ s, idx: -1, adv: false, start: when, end: when + cue.duration }); when += cue.duration + 0.12; }
+      return run(my, list, from, null, lang, voiceId, speed, when, true, cue ? 34 : 60);
     },
-    stop() { token++; R.on = false; srcs.forEach((s) => { try { s.onended = null; s.stop(); } catch (e) {} }); srcs = []; },
+    // A recorded phrase alone (a voice press while nothing is read): sounds at once, stops anything else.
+    say(cue) { R.stop(); R.unlock(); if (!cue) return; const s = AC.createBufferSource(); s.buffer = cue; s.connect(AC.destination); s.start(AC.currentTime + 0.03); srcs.push({ s, idx: -1, adv: false, start: 0, end: 1e9 }); },
+    // Recorded phrases are fetched and decoded once, so a press sounds at once.
+    async cue(url) { R.unlock(); const k = new URL(url, location.href).href; if (!CUES[k]) CUES[k] = fetch(k).then((r) => r.arrayBuffer()).then((b) => new Promise((ok, no) => AC.decodeAudioData(b, ok, no))).catch(() => { delete CUES[k]; return null; }); return CUES[k]; },
+    // «Мужской»/«Женский»/speed while reading. Owner 2026-11-18: keeping the old voice on after a press, then silence, looked
+    // broken («тыкался ещё раз»). Now the old voice stops at once, the new voice answers at once with a recorded cue, and the
+    // phrase that was interrupted starts again in the new voice/speed (its first part short, made while the cue sounds).
+    change(list, lang, voiceId, speed, cue) {
+      const now = AC ? AC.currentTime : 0, cur = srcs.filter((x) => x.idx >= 0 && x.end > now).sort((a, b) => a.start - b.start)[0];
+      return R.play(list, cur ? cur.idx : R.i, lang, voiceId, speed, cue);
+    },
+    stop() { token++; cancelBefore(nextJob()); R.on = false; srcs.forEach((x) => { try { x.s.onended = null; x.s.stop(); } catch (e) {} }); srcs = []; },
   };
+  function done(idx, n) { R.i = idx + 1; R.onPiece && R.onPiece(idx + 1, n); if (idx + 1 >= n) { R.on = false; R.onEnd && R.onEnd(); } }
+  // A long piece is cut once at a comma (or a space) near 50 letters, so the first sound after a start or a switch comes sooner.
+  // lim: about how many letters the first part may have (34 right after a voice press, so it is ready while the cue sounds).
+  function cut(t, lim = 60) { if (t.length < lim + 30) return null; const head = t.slice(0, lim + 10), m = Math.min(25, Math.floor(lim / 2)); let k = head.lastIndexOf(", "); if (k < m) k = head.lastIndexOf(" "); return k < m ? null : [t.slice(0, k + 1).trim(), t.slice(k + 1).trim()]; }
+  async function run(my, list, from, rest, lang, voiceId, speed, when, stat, lim) {
+    const job = nextJob(), q = []; let k = from;
+    if (rest != null) { q.push({ t: rest, idx: k, adv: true }); k++; }
+    else if (k < list.length) { const c = cut(list[k], lim); if (c) { q.push({ t: c[0], idx: k, adv: false, rest: c[1] }, { t: c[1], idx: k, adv: true }); k++; } }
+    while (my === token) {
+      const it = q.shift() || (k < list.length ? { t: list[k], idx: k++, adv: true } : null); if (!it) return;
+      const a = performance.now(); let w;
+      try { w = await synth(it.t, lang, voiceId, TTS.steps, speed, job); } catch (e) { if (my !== token || e.cancelled || /cancelled/.test(e.message)) return; throw e; }
+      if (my !== token) return;
+      R.made += performance.now() - a; R.sound += w.length / TTS.sr;
+      if (TTS.steps > 6 && R.made / 1000 > R.sound * 0.85) TTS.steps = 6; // slow phone: a little lighter, never the robotic 4 steps (Owner 2026-11-17)
+      const buf = AC.createBuffer(1, w.length, TTS.sr); buf.copyToChannel(w, 0);
+      const s = AC.createBufferSource(); s.buffer = buf; s.connect(AC.destination);
+      when = Math.max(when, AC.currentTime + 0.02); s.start(when);
+      const rec = { s, idx: it.idx, adv: it.adv, rest: it.rest, start: when, end: when + buf.duration };
+      s.onended = () => { if (my !== token) return; srcs = srcs.filter((x) => x !== rec); if (it.adv) done(it.idx, list.length); };
+      srcs.push(rec); when += buf.duration + (it.adv ? 0.22 : 0.08);
+      if (stat) { stat = false; R.onStat && R.onStat(); }
+      while (my === token && when - AC.currentTime > 20) await new Promise((r) => setTimeout(r, 300));
+    }
+  }
   return R;
 }
 
 // Inside the background thread: load and make phrases on request from the page.
 if (IN_WORKER) self.onmessage = async (e) => {
   const { id, op, args } = e.data;
+  if (op === "cancel") { MIN = Math.max(MIN, args[0]); return; }
   try {
     if (op === "load") { const T = await loadHere(args.how, (t) => self.postMessage({ id, say: t })); self.postMessage({ id, r: { sr: T.sr, steps: T.steps, gpu: T.gpu, secs: T.secs } }); }
     else if (op === "synth") { const w = await synth(...args); self.postMessage({ id, r: w, last: { ...LAST } }, [w.buffer]); }

@@ -345,7 +345,7 @@ ol.steps li::before{content:counter(s);width:40px;height:40px;border-radius:50%;
 </div>
 
 <script src="leaflet.min.js"></script>
-<script>(function(){var b=document.getElementById("start");if(b){b.dataset.t=b.textContent;b.textContent="Загружаю карту…";b.disabled=true;b.style.opacity=".75";}var t=document.getElementById("tripget");if(t){t.disabled=true;t.style.opacity=".75";}document.querySelectorAll(".say").forEach(function(s){if(!s.textContent.trim())s.innerHTML="<span>"+(s.dataset.label||"Слушать")+"</span>";});})();</script><script src="data.e08ea7a0.js"></script><script>
+<script>(function(){var b=document.getElementById("start");if(b){b.dataset.t=b.textContent;b.textContent="Загружаю карту…";b.disabled=true;b.style.opacity=".75";}var t=document.getElementById("tripget");if(t){t.disabled=true;t.style.opacity=".75";}document.querySelectorAll(".say").forEach(function(s){if(!s.textContent.trim())s.innerHTML="<span>"+(s.dataset.label||"Слушать")+"</span>";});})();</script><script src="data.501d063a.js"></script><script>
 
 // Light map format (scripts/compact-map.mjs): whole numbers in 1/100000 of a degree, first point from the corner, then steps.
 if(MAP&&MAP.v===2){ const o=MAP.o, dec=l=>{ const r=[]; let a=0,b=0; for(let i=0;i<l.length;i+=2){ a+=l[i]; b+=l[i+1]; r.push([o[0]+a/1e5,o[1]+b/1e5]); } return r; };
@@ -780,7 +780,7 @@ function ruFold(s) { return ruPlain(s).toLowerCase().replace(/ё/g, "е"); }
 function ruCopyMarks(word, marked) {
   if (ruFold(word) !== ruFold(marked)) return word;
   var out = "", k = 0;
-  for (var i = 0; i < marked.length; i++) { var c = marked[i]; if (c === RU_MARK) { out += RU_MARK; continue; } out += word[k++]; }
+  for (var i = 0; i < marked.length; i++) { var c = marked[i]; if (c === RU_MARK) { out += RU_MARK; continue; } const o = word[k++]; out += (c === "ё" || c === "Ё") && (o === "е" || o === "Е") ? (o === "Е" ? "Ё" : "ё") : o; } // «её», «ещё»: the voice needs the ё (2026-11-18)
   return out;
 }
 var RU_WORD = /[А-Яа-яЁё́]+/g;
@@ -816,7 +816,7 @@ function ttsToggle(){ if(NV&&NV.ok&&current){ nvToggle(); return; }
   stopSay(); a.pause(); try{ speechSynthesis.cancel(); }catch(e){} TTS.on=true; ttsSpeak(); ttsUI();
   if(!TTS.told){ TTS.told=true; toast("Читает голос вашего телефона. Голос и скорость — под кнопкой, ниже."); } }
 // After a change of voice or speed: if reading, say the current sentence again in the new voice; if not, a short sample.
-function ttsApply(){ vSave(); drawVoiceRow(); if(NV&&NV.ok){ nvApply(false); return; } if(TTS.on){ TTS.u=null; try{ speechSynthesis.cancel(); }catch(e){} setTimeout(ttsSpeak,60); return; }
+function ttsApply(){ vSave(); drawVoiceRow(); if(NV&&NV.ok) return; if(TTS.on){ TTS.u=null; try{ speechSynthesis.cancel(); }catch(e){} setTimeout(ttsSpeak,60); return; }
   try{ speechSynthesis.cancel(); const u=ttsUtter("Здравствуйте! Так я буду читать вам рассказы о городе."); speechSynthesis.speak(u); }catch(e){} }
 function drawVoiceRow(){ const row=$("voicerow"); if(!row) return; if(NV&&NV.ok){ nvDrawRow(); return; } const all=ttsVoices(), v=ttsVoice(), g=v?vGender(v):"";
   const has={f:all.some(x=>vGender(x)==="f"),m:all.some(x=>vGender(x)==="m")};
@@ -824,7 +824,8 @@ function drawVoiceRow(){ const row=$("voicerow"); if(!row) return; if(NV&&NV.ok)
   const same=all.filter(x=>vGender(x)===(g||vGender(x))); $("vnext").hidden=true;
   // One short plain sentence (Owner 2026-11-17: simple for everyone); the reason in brackets only when something failed — for a screenshot.
   const why=NV&&NV.err?" ("+NV.err+")":"";
-  $("vname").textContent=(NV&&NV.can&&!NV.have&&tripGet.on?"Скачиваю хороший голос… Пока читает голос телефона."
+  $("vtrip").hidden=!(NV&&NV.can&&!NV.have)||!!tripGet.on;
+  $("vname").textContent=(NV&&NV.can&&!NV.have&&tripGet.on?"Скачиваю хороший голос: "+(tripGet.pct||0)+"%. Пока читает голос телефона."
     :NV&&NV.can&&!NV.have?"Хороший голос ещё не скачан: нажмите «Скачать голос» ниже, это один раз. Пока читает голос телефона."
     :NV&&!NV.mod&&!NV.err?"Готовлю хороший голос…"
     :NV&&NV.failed&&NV.have?"Хорошему голосу не хватило памяти телефона, читает голос телефона."
@@ -837,20 +838,25 @@ function drawVoiceRow(){ const row=$("voicerow"); if(!row) return; if(NV&&NV.ok)
     const T=$("vtech"); if(T){ T.textContent=all.length?"Для проверки: "+all.map(x=>x.name+" = "+(x.voiceURI||"—")).join("; "):"";
       if(NV&&NV.failed&&NV.have){ const b=document.createElement("button"); b.type="button"; b.className="vchip"; b.textContent="Попробовать голос без интернета ещё раз"; b.onclick=nvRetry; T.prepend(b," "); } } }
   if(!all.length&&(drawVoiceRow.n=(drawVoiceRow.n||0)+1)<8) setTimeout(drawVoiceRow,400); /* Safari may give the list late and without an event */ }
-function pickGender(gx){ if(NV&&NV.ok){ nvPick(gx); return; } const all=ttsVoices(), v=all.find(x=>vGender(x)===gx);
+// Marina's Android 2026-11-18: «Мужской» did nothing while the good voice was still downloading (the phone has one robotic voice
+// and Chrome on Android often ignores the voice choice). Now a press says plainly what happens, and starts the download if needed.
+function pickGender(gx){ if(NV&&NV.ok){ nvPick(gx); return; }
+  if(NV&&NV.mod&&NV.can&&!NV.have){ VSET.nv=gx==="f"?NV_FEMALE:NV_MALE; vSave(); const p=tripGet.pct;
+    toast((gx==="m"?"Мужской":"Женский")+" голос будет, как только голос скачается"+(tripGet.on?" (сейчас "+(p||0)+"%)":" — скачивание началось")+". Это один раз. Пока читает голос телефона.");
+    if(!tripGet.on) tripGet(); return; } const all=ttsVoices(), v=all.find(x=>vGender(x)===gx);
   const alias=!v&&all.find(x=>V_ALIAS.has(x));
   if(alias){ VSET.g=""; VSET.name=alias.name; VSET.uri=vKey(alias); ttsApply(); toast("Safari не даёт карте "+(gx==="m"?"мужской":"женский")+" голос напрямую. Включён «Голос из настроек iPhone»: какой голос выбран в настройках телефона, тот и читает."); return; }
   if(!v){ toast(gx==="m"?"Мужского русского голоса на этом телефоне пока нет. Как его добавить бесплатно — «Как сделать голос лучше».":"Женского русского голоса на этом телефоне пока нет. Как его добавить — «Как сделать голос лучше»."); $("vhelp").hidden=false; $("vhelpbtn").setAttribute("aria-expanded","true"); return; }
   VSET.g=gx; VSET.name=v.name; VSET.uri=vKey(v); ttsApply(); }
 function nextVoice(){ if(NV&&NV.ok){ nvNext(); return; } const v=ttsVoice(); if(!v) return; const g=vGender(v), same=ttsVoices().filter(x=>!g||vGender(x)===g); const k=same.findIndex(x=>vKey(x)===vKey(v)); const n=same[(k+1)%same.length]; VSET.name=n.name; VSET.uri=vKey(n); VSET.g=vGender(n)||VSET.g; ttsApply(); }
-function stepRate(d){ VSET.rate=Math.min(1.8,Math.max(0.6,Math.round(((VSET.rate||1)+d)*10)/10)); ttsApply(); }
+function stepRate(d){ VSET.rate=Math.min(1.8,Math.max(0.6,Math.round(((VSET.rate||1)+d)*10)/10)); if(NV&&NV.ok){ vSave(); drawVoiceRow(); nvApply(d<0?"slower":"faster"); return; } ttsApply(); }
 // ---- Voice without internet (Owner 2026-11-16): one voice for every story, made inside the phone by voice/voice-engine.mjs.
 // One button «Скачать всё для поездки» stores the voice and this city's photos; after that the map needs no internet.
 // Phones without a graphics chip for the browser (no WebGPU) keep the phone's own voice.
-var NV={base:"../voice/",engine:"voice-engine.abf37abe.mjs",mod:null,can:"",ok:false,have:false,R:null,list:[],i:0,id:null,loading:false};
+var NV={base:"../voice/",engine:"voice-engine.c0b302e7.mjs",mod:null,can:"",ok:false,have:false,R:null,list:[],i:0,id:null,loading:false};
 const NV_NAMES={M1:"Мужской 1",M2:"Мужской 2",M3:"Мужской 3",M4:"Мужской 4",M5:"Мужской 5",F1:"Женский 1",F2:"Женский 2",F3:"Женский 3",F4:"Женский 4",F5:"Женский 5"};
 const TRIP_PHOTO_BYTES=131271279, TRIP_CACHE="tb-trip-photos-"+location.pathname.replace(/[^a-z]/gi,"").slice(-24);
-const BUILD="18.11 01:16"; // shown on the card, so a screenshot tells which version the phone really runs (2026-11-17)
+const BUILD="18.11 08:55"; // shown on the card, so a screenshot tells which version the phone really runs (2026-11-17)
 // Owner 2026-11-17: only two voices, one male and one female, lower and calm («писклявый голос слушать долго невозможно»).
 // Chosen by measured pitch of the samples: Мужской 2 ≈ 90 Hz (lowest male; Мужской 1 was 132 Hz), Женский 5 ≈ 165 Hz (lowest female).
 const NV_MALE="M2", NV_FEMALE="F5";
@@ -865,9 +871,10 @@ async function nvInit(){ if(!NV.base){ NV.err="нет голоса на этой
   // Crash guard (iPhone 2026-11-17: the page was reset while the voice loaded). A mark is set while the voice switches on and
   // during its first pieces; if the page starts again with the mark still there, the page had been reset — this phone reads with its own voice.
   // A reset with the graphics chip → next time the processor way (no message needed); a reset with the processor → the phone's own voice.
-  try{ const was=localStorage.getItem(NV_BUSY); if(was){ localStorage.removeItem(NV_BUSY); if(was==="gpu"){ localStorage.setItem("tb-nv-cpu","1"); NV.can=await NV.mod.canRun(); NV.toCpu=true; } else { localStorage.setItem(NV_FAIL,"1"); NV.justFailed=true; } } NV.failed=!!localStorage.getItem(NV_FAIL); }catch(e){}
+  try{ const was=localStorage.getItem(NV_BUSY); if(was){ localStorage.removeItem(NV_BUSY); if(was==="gpu"){ localStorage.setItem("tb-nv-cpu","1"); NV.can=await NV.mod.canRun(); NV.toCpu=true; } else if(localStorage.getItem("tb-nv-cpu-reset")){ localStorage.setItem(NV_FAIL,"1"); NV.justFailed=true; } else { localStorage.setItem("tb-nv-cpu-reset","1"); NV.cpuReset=true; } } NV.failed=!!localStorage.getItem(NV_FAIL); }catch(e){}
   NV.ok=!!NV.can&&NV.have&&!NV.failed; drawTrip(); if(current&&!current.audio){ drawVoiceRow(); ttsUI(); }
   if(NV.toCpu) toast("Карта перезапустилась: видеочипу телефона не хватило памяти. Теперь голос работает через процессор — нажмите «Слушать».");
+  if(NV.cpuReset) toast("Карта перезапустилась. Нажмите «Слушать» — рассказ продолжится.");
   if(NV.justFailed) toast("Голос без интернета не поместился в память этого телефона, и карта перезагрузилась. Рассказы читает голос телефона."); }
 // Version 2 of the marks (2026-11-17): the old ones were set by the graphics-chip way that reset the map; the iPhone now uses the
 // processor way, so an old mark must not keep the phone voice on (Owner's screenshot 15:23: «не поместился в память»).
@@ -886,39 +893,54 @@ async function tripGet(){ if(tripGet.on) return; tripGet.on=true; $("tripget").d
   $("tripbar").hidden=false; $("trippill").hidden=false;
   const voiceNeeded=!!NV.mod&&!!NV.can&&!NV.have, list=tripPhotos();
   const total=(voiceNeeded?await NV.mod.totalBytes():0)+TRIP_PHOTO_BYTES; let done=0;
-  const show=()=>{ const t=Math.round(done/1e6)+" из "+Math.round(total/1e6)+" МБ"; $("tripbar").value=Math.min(100,done/total*100); $("tripinfo").textContent="Скачиваю всё для поездки: "+t+". Можно пользоваться картой."; $("trippillt").textContent="Скачиваю для поездки: "+Math.min(100,Math.round(done/total*100))+"%"; };
+  $("vtrip").hidden=true;
+  const show=()=>{ const t=Math.round(done/1e6)+" из "+Math.round(total/1e6)+" МБ"; tripGet.pct=Math.min(100,Math.round(done/total*100)); if(voiceNeeded&&!NV.have&&$("vname")) $("vname").textContent="Скачиваю хороший голос: "+tripGet.pct+"%. Пока читает голос телефона."; $("tripbar").value=Math.min(100,done/total*100); $("tripinfo").textContent="Скачиваю всё для поездки: "+t+". Можно пользоваться картой."; $("trippillt").textContent="Скачиваю для поездки: "+Math.min(100,Math.round(done/total*100))+"%"; };
   try{
     if(voiceNeeded){ await NV.mod.download(n=>{ done+=n; show(); }); NV.have=true; NV.ok=true; }
     const c=await caches.open(TRIP_CACHE); let k=0;
     const work=async()=>{ while(k<list.length){ const u=list[k++]; try{ if(await c.match(u)) { done+=TRIP_PHOTO_BYTES/list.length; show(); continue; } const r=await fetch(u); if(r.ok){ const b=await r.blob(); await c.put(u,new Response(b,{headers:{"Content-Type":r.headers.get("Content-Type")||"image/jpeg"}})); done+=b.size; } }catch(e){} show(); } };
     await Promise.all([work(),work(),work(),work()]);
     try{ if(navigator.storage&&navigator.storage.persist) await navigator.storage.persist(); }catch(e){}
-    tripGet.ok=true; toast(NV.ok?"✓ Готово: карта, фото и голос в телефоне. Можно гулять без интернета.":"✓ Готово: карта и фото в телефоне.");
+    tripGet.ok=true; if(NV.ok&&TTS.on) ttsStop(); toast(NV.ok?"✓ Готово: карта, фото и хороший голос в телефоне — нажмите «Слушать». Интернет больше не нужен.":"✓ Готово: карта и фото в телефоне.");
   }catch(e){ tripGet.ok=false; toast("Загрузка прервалась. Нажмите «Скачать всё для поездки» ещё раз — продолжит с того же места."); }
   tripGet.on=false; $("tripbar").hidden=true; drawTrip();
   if(tripGet.ok){ $("trippillt").textContent=NV.ok?"✓ Всё для поездки в телефоне":"✓ Карта и фото в телефоне"; setTimeout(()=>{ if(!tripGet.on) $("trippill").hidden=true; },15000); } else $("trippill").hidden=true; if(current&&!current.audio){ drawVoiceRow(); ttsUI(); } }
 function nvUI(){ if(!current||current.audio) return; const on=!!(NV.R&&NV.R.on), resume=NV.id===current.id&&NV.i>0&&NV.i<NV.list.length;
   $("ic").innerHTML=on?ICON.pause:ICON.play; $("playt").textContent=NV.loading?"Включаю голос…":(on?"Пауза":(resume?"Продолжить":"Слушать")); $("play").setAttribute("aria-label",$("playt").textContent); try{ markPin(); }catch(e){} }
 function nvStop(){ if(NV.R&&NV.R.on){ NV.i=NV.R.i; NV.R.stop(); } nvBusy(false); }
-function nvReader(){ if(NV.R) return; NV.R=NV.mod.reader(); NV.R.onPiece=(k,n)=>{ NV.i=k; if(k>=3) nvBusy(false); if(k>=Math.ceil(n*.85)) markSeen(NV.id,2); }; NV.R.onEnd=()=>{ nvBusy(false); NV.i=0; nvUI(); }; }
+// Owner 2026-11-18 (iPhone): the map reset in the middle of a story and came back to the first screen. Now: (1) the place and
+// the phrase are remembered while a story is read, and after a reset the map opens again at that place («Продолжить»);
+// (2) the crash mark stays on for the whole story (before: only its first pieces), so a reset at any moment switches that
+// phone to the lighter processor way; it is taken off when the story ends, is paused, or the phone leaves the page normally.
+const LIVE_KEY="tb-live-v1";
+function liveSave(){ try{ if(NV.id&&current&&NV.id===current.id&&PLACES.some(x=>x.id===NV.id)) localStorage.setItem(LIVE_KEY,JSON.stringify({id:NV.id,i:NV.i,t:Date.now(),p:location.pathname})); }catch(e){} }
+function liveClear(){ try{ localStorage.removeItem(LIVE_KEY); }catch(e){} }
+function nvReader(){ if(NV.R) return; NV.R=NV.mod.reader(); NV.R.onPiece=(k,n)=>{ NV.i=k; liveSave(); if(k>=Math.ceil(n*.85)) markSeen(NV.id,2); }; NV.R.onEnd=()=>{ nvBusy(false); liveClear(); NV.i=0; nvUI(); }; }
+document.addEventListener("visibilitychange",()=>{ if(document.hidden) nvBusy(false); else if(NV.R&&NV.R.on) nvBusy(true); });
+addEventListener("pagehide",()=>nvBusy(false));
 async function nvToggle(){ if(NV.R&&NV.R.on){ nvStop(); nvUI(); return; }
-  if(NV.id!==current.id){ NV.id=current.id; NV.list=NV.mod.pieces(nvText(current),"ru"); NV.i=0; }
+  if(NV.id!==current.id){ NV.id=current.id; NV.list=NV.mod.pieces(nvText(current),"ru"); NV.i=NV.back&&NV.back.id===current.id?Math.min(NV.back.i,NV.list.length-1):0; NV.back=null; }
   stopSay(); a.pause(); try{ speechSynthesis.cancel(); }catch(e){}
   nvReader(); NV.R.unlock(); // right inside the tap: the iPhone allows sound only from a tap (first «Мужской» was silent, 2026-11-17)
-  if(!NV.mod.engine()){ if(NV.loading) return; NV.loading=true; nvUI(); nvBusy(true); try{ await NV.mod.load(); }catch(e){ nvBusy(false); NV.loading=false; NV.ok=false; drawVoiceRow(); toast("Голос без интернета не включился на этом телефоне — читает голос телефона."); ttsToggle(); return; } NV.loading=false; }
+  if(!NV.mod.engine()){ if(NV.loading) return; NV.loading=true; nvUI(); nvBusy(true); try{ await NV.mod.load(); }catch(e){ nvBusy(false); NV.loading=false; NV.ok=false; drawVoiceRow(); toast("Голос без интернета не включился на этом телефоне — читает голос телефона."); ttsToggle(); return; } NV.loading=false; nvPreloadCues(); }
   else nvBusy(true);
-  const id=NV.id; NV.R.play(NV.list,NV.i,"ru",nvVoice(),VSET.rate||1).catch(()=>{ if(NV.id===id){ nvStop(); nvUI(); toast("Голос сбился. Нажмите «Слушать» ещё раз."); } }); nvUI(); }
-// While reading, a switch keeps the phrase that sounds now and changes from the next one — no silence (Owner 2026-11-17).
-function nvApply(sample){ if(NV.R&&NV.R.on){ NV.R.unlock(); NV.R.change(NV.list,"ru",nvVoice(),VSET.rate||1).catch(()=>{ nvStop(); nvUI(); }); toast("Хорошо — со следующей фразы."); nvUI(); return; }
-  if(sample&&NV.mod.engine()&&!NV.loading){ nvReader(); NV.R.unlock(); const keep={l:NV.list,i:NV.i,id:NV.id}; NV.R.onEnd=()=>{ NV.list=keep.l; NV.i=keep.i; NV.id=keep.id; NV.R.onEnd=()=>{ nvBusy(false); NV.i=0; nvUI(); }; nvUI(); };
-    NV.list=["Здра́вствуйте! Та́к я бу́ду расска́зывать ва́м о го́роде."]; NV.id="sample"; NV.R.play(NV.list,0,"ru",nvVoice(),VSET.rate||1).catch(()=>{}); } }
+  liveSave(); const id=NV.id; NV.R.play(NV.list,NV.i,"ru",nvVoice(),VSET.rate||1).catch(()=>{ if(NV.id===id){ nvStop(); nvUI(); toast("Голос сбился. Нажмите «Слушать» ещё раз."); } }); nvUI(); }
+// A press on «Мужской»/«Женский»/speed answers AT ONCE with a short recorded phrase in the chosen voice (Owner 2026-11-18:
+// a long silence after the press looked broken, he pressed again). While reading, the interrupted phrase then goes on in the new voice.
+// what: "switch" | "slower" | "faster" | "hello" (a voice press while nothing is read).
+function nvCueUrl(what){ return "audio/say/"+(nvVoice()[0]==="F"?"f-":"m-")+what+".mp3"; }
+async function nvApply(what){ if(!what||!NV.mod) return; nvReader(); NV.R.unlock(); const reading=NV.R.on&&!!NV.mod.engine()&&NV.id===(current&&current.id);
+  const seq=nvApply.n=(nvApply.n||0)+1, cue=await NV.R.cue(nvCueUrl(what)); if(seq!==nvApply.n) return; // quick double presses: only the last counts
+  if(reading){ nvBusy(true); NV.R.change(NV.list,"ru",nvVoice(),VSET.rate||1,cue).catch(()=>{ nvStop(); nvUI(); }); nvUI(); return; }
+  if(cue) NV.R.say(cue); }
+function nvPreloadCues(){ try{ nvReader(); ["m-","f-"].forEach(g=>["switch","slower","faster","hello"].forEach(w=>NV.R.cue("audio/say/"+g+w+".mp3"))); }catch(e){} }
 function nvDrawRow(){ const v=nvVoice(), g=v[0]==="F"?"f":"m";
   $("vf").setAttribute("aria-pressed",String(g==="f")); $("vm").setAttribute("aria-pressed",String(g==="m")); $("vnext").hidden=true;
   $("vname").textContent="Читает "+(g==="f"?"женский":"мужской")+" голос, без интернета · версия "+BUILD;
   $("vrate").textContent="×"+(VSET.rate||1).toFixed(1).replace(".",","); $("vslow").disabled=(VSET.rate||1)<=0.71; $("vfast").disabled=(VSET.rate||1)>=1.49;
   const L=$("vlist"); if(L) L.textContent="Два голоса — мужской и женский, спокойные и негромкие. Работают без интернета.";
   const T=$("vtech"); if(T) T.textContent=""; }
-function nvPick(gx){ const cur=nvVoice(); if((cur[0]==="F")!==(gx==="f")) VSET.nv=gx==="f"?NV_FEMALE:NV_MALE; vSave(); nvDrawRow(); nvApply(true); }
+function nvPick(gx){ const cur=nvVoice(), change=(cur[0]==="F")!==(gx==="f"); if(change) VSET.nv=gx==="f"?NV_FEMALE:NV_MALE; vSave(); nvDrawRow(); nvApply(NV.R&&NV.R.on?(change?"switch":null):"hello"); }
 function nvNext(){}
 function setPlayUI(){ const on=!a.paused&&!a.ended; $("ic").innerHTML=on?ICON.pause:ICON.play; $("playt").textContent=on?"Пауза":(a.ended?"Ещё раз":(a.currentTime>0.5?"Продолжить с "+fmt(a.currentTime):"Слушать")); $("play").setAttribute("aria-label",$("playt").textContent); }
 // The building of the chosen place is shaded in terracotta, so it is clear which building the story is about.
@@ -1208,5 +1230,8 @@ drawSay();
 window.__sample={map,select,PLACES,a,say,SAY,walk,saved:()=>saved,walkers,lines};
 // The map is ready: «Открыть карту» works again (the light first screen showed «Загружаю карту…» while the stories loaded).
 { const b=$("start"); if(b.dataset.t){ b.textContent=b.dataset.t; b.disabled=false; b.style.opacity=""; } const t=$("tripget"); if(t){ t.style.opacity=""; if(!tripGet.on) t.disabled=false; } }
+// Back to the story after a reset or a reopen within 20 minutes: the map opens at that place, «Слушать» goes on from that phrase.
+try{ const L=JSON.parse(localStorage.getItem(LIVE_KEY)||"null"), p=L&&L.p===location.pathname&&Date.now()-L.t<20*60e3&&PLACES.find(x=>x.id===L.id);
+  if(p){ NV.back={id:p.id,i:L.i||0}; $("start").click(); select(p); setTimeout(()=>toast("Вы слушали: "+p.title+". Нажмите «Слушать» — рассказ пойдёт с того места, где остановился."),300); } }catch(e){}
 </script>
 </body></html>
