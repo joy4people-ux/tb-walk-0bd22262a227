@@ -196,7 +196,7 @@ export function pieces(t, lang) {
 
 // A reader that plays pieces one after another, making the next while the current one sounds.
 export function reader() {
-  let AC = null, srcs = [], token = 0;
+  let AC = null, srcs = [], token = 0; const CUES = {};
   const R = { on: false, i: 0, made: 0, sound: 0, onPiece: null, onEnd: null, onStat: null,
     // Must be called right inside the tap, before any waiting: the iPhone lets a page make sound only from a tap.
     // The first tap on «Мужской» was silent because the sound was switched on after the voice had loaded (Owner, 2026-11-17).
@@ -206,43 +206,42 @@ export function reader() {
       AC = AC || new (window.AudioContext || window.webkitAudioContext)();
       try { AC.resume(); const s = AC.createBufferSource(); s.buffer = AC.createBuffer(1, 1, 22050); s.connect(AC.destination); s.start(0); } catch (e) {}
     },
-    async play(list, from, lang, voiceId, speed) {
+    // cue: a short recorded phrase (AudioBuffer) said at once, e.g. «Хорошо, дальше рассказываю я» after a voice press;
+    // the story then goes on with a short first part, made while the cue sounds.
+    async play(list, from, lang, voiceId, speed, cue) {
       R.stop(); const my = ++token; R.on = true; R.i = from;
       R.unlock(); try { await AC.resume(); } catch (e) {}
-      return run(my, list, from, null, lang, voiceId, speed, AC.currentTime + 0.05, true);
+      let when = AC.currentTime + 0.03;
+      if (cue) { const s = AC.createBufferSource(); s.buffer = cue; s.connect(AC.destination); s.start(when); srcs.push({ s, idx: -1, adv: false, start: when, end: when + cue.duration }); when += cue.duration + 0.12; }
+      return run(my, list, from, null, lang, voiceId, speed, when, true, cue ? 34 : 60);
     },
-    // «Мужской»/«Женский»/speed while reading (Owner 2026-11-17: long silence after a press): the phrase that sounds now
-    // plays to its end, phrases made ahead and the one being made are dropped, the next phrase comes in the new voice/speed —
-    // its first part short, so it is ready before the current one ends.
-    change(list, lang, voiceId, speed) {
-      if (!R.on || !AC) return R.play(list, R.i, lang, voiceId, speed);
-      const now = AC.currentTime, live = srcs.filter((x) => x.end > now + 0.05).sort((a, b) => a.start - b.start);
-      if (!live.length) return R.play(list, R.i, lang, voiceId, speed);
-      const my = ++token; cancelBefore(nextJob());
-      // Phrases already made in the old voice keep sounding until the new voice has had time to make its first part
-      // (measured 2026-11-18: the processor needs about 2.4 s per second of speech on the PC, so dropping them meant silence).
-      const rate = R.sound > 1 ? R.made / 1000 / R.sound : 1.5, keep = [];
-      for (const x of live) {
-        keep.push(x); const nx = x.adv ? list[x.idx + 1] : x.rest; if (nx == null) break;
-        const first = (cut(nx) || [nx])[0], need = rate * first.length / 9 / (speed || 1) + 0.4; // about 9 letters per second of speech
-        if (x.end - now >= need) break;
-      }
-      srcs.filter((x) => !keep.includes(x)).forEach((x) => { try { x.s.onended = null; x.s.stop(); } catch (e) {} }); srcs = keep;
-      keep.forEach((x) => { x.s.onended = () => { if (my !== token) return; srcs = srcs.filter((y) => y !== x); if (x.adv) done(x.idx, list.length); }; });
-      const last = keep[keep.length - 1], next = last.adv ? last.idx + 1 : last.idx; if (next >= list.length) return Promise.resolve();
-      return run(my, list, next, last.adv ? null : last.rest, lang, voiceId, speed, last.end + (last.adv ? 0.22 : 0.08), false);
+    // A recorded phrase alone (a voice press while nothing is read): sounds at once, stops anything else.
+    say(cue) { R.stop(); R.unlock(); if (!cue) return; const s = AC.createBufferSource(); s.buffer = cue; s.connect(AC.destination); s.start(AC.currentTime + 0.03); srcs.push({ s, idx: -1, adv: false, start: 0, end: 1e9 }); },
+    // Recorded phrases are fetched and decoded once, so a press sounds at once.
+    async cue(url) { R.unlock(); const k = new URL(url, location.href).href; if (!CUES[k]) CUES[k] = fetch(k).then((r) => r.arrayBuffer()).then((b) => new Promise((ok, no) => AC.decodeAudioData(b, ok, no))).catch(() => { delete CUES[k]; return null; }); return CUES[k]; },
+    // «Мужской»/«Женский»/speed while reading. Owner 2026-11-18: keeping the old voice on after a press, then silence, looked
+    // broken («тыкался ещё раз»). Now the old voice stops at once, the new voice answers at once with a recorded cue, and the
+    // phrase that was interrupted starts again in the new voice/speed (its first part short, made while the cue sounds).
+    change(list, lang, voiceId, speed, cue) {
+      const now = AC ? AC.currentTime : 0, cur = srcs.filter((x) => x.idx >= 0 && x.end > now).sort((a, b) => a.start - b.start)[0];
+      return R.play(list, cur ? cur.idx : R.i, lang, voiceId, speed, cue);
     },
     stop() { token++; cancelBefore(nextJob()); R.on = false; srcs.forEach((x) => { try { x.s.onended = null; x.s.stop(); } catch (e) {} }); srcs = []; },
   };
   function done(idx, n) { R.i = idx + 1; R.onPiece && R.onPiece(idx + 1, n); if (idx + 1 >= n) { R.on = false; R.onEnd && R.onEnd(); } }
   // A long piece is cut once at a comma (or a space) near 50 letters, so the first sound after a start or a switch comes sooner.
-  function cut(t) { if (t.length < 90) return null; const head = t.slice(0, 70); let k = head.lastIndexOf(", "); if (k < 25) k = head.lastIndexOf(" "); return k < 25 ? null : [t.slice(0, k + 1).trim(), t.slice(k + 1).trim()]; }
-  async function run(my, list, from, rest, lang, voiceId, speed, when, stat) {
+  // lim: about how many letters the first part may have (34 right after a voice press, so it is ready while the cue sounds).
+  function cut(t, lim = 60) { if (t.length < lim + 30) return null; const head = t.slice(0, lim + 10), m = Math.min(25, Math.floor(lim / 2)); let k = head.lastIndexOf(", "); if (k < m) k = head.lastIndexOf(" "); return k < m ? null : [t.slice(0, k + 1).trim(), t.slice(k + 1).trim()]; }
+  async function run(my, list, from, rest, lang, voiceId, speed, when, stat, lim) {
     const job = nextJob(), q = []; let k = from;
     if (rest != null) { q.push({ t: rest, idx: k, adv: true }); k++; }
-    else if (k < list.length) { const c = cut(list[k]); if (c) { q.push({ t: c[0], idx: k, adv: false, rest: c[1] }, { t: c[1], idx: k, adv: true }); k++; } }
+    else if (k < list.length) { const c = cut(list[k], lim); if (c) { q.push({ t: c[0], idx: k, adv: false, rest: c[1] }, { t: c[1], idx: k, adv: true }); k++; } }
     while (my === token) {
-      const it = q.shift() || (k < list.length ? { t: list[k], idx: k++, adv: true } : null); if (!it) return;
+      let it = q.shift() || (k < list.length ? { t: list[k], idx: k++, adv: true } : null); if (!it) return;
+      // Long phrases at a slow speed make long sound at once — the most memory (Owner's iPhone reset on «Медленнее», 2026-11-18).
+      // A phrase is made in parts of at most about 110 letters at normal speed, fewer when slower.
+      const capL = Math.round(110 * Math.min(1, speed || 1)), pc = it.t.length > capL + 25 ? cut(it.t, capL) : null;
+      if (pc) { q.unshift({ t: pc[1], idx: it.idx, adv: it.adv }); it = { t: pc[0], idx: it.idx, adv: false }; }
       const a = performance.now(); let w;
       try { w = await synth(it.t, lang, voiceId, TTS.steps, speed, job); } catch (e) { if (my !== token || e.cancelled || /cancelled/.test(e.message)) return; throw e; }
       if (my !== token) return;

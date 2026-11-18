@@ -237,7 +237,11 @@ export function reader() {
     if (rest != null) { q.push({ t: rest, idx: k, adv: true }); k++; }
     else if (k < list.length) { const c = cut(list[k], lim); if (c) { q.push({ t: c[0], idx: k, adv: false, rest: c[1] }, { t: c[1], idx: k, adv: true }); k++; } }
     while (my === token) {
-      const it = q.shift() || (k < list.length ? { t: list[k], idx: k++, adv: true } : null); if (!it) return;
+      let it = q.shift() || (k < list.length ? { t: list[k], idx: k++, adv: true } : null); if (!it) return;
+      // Long phrases at a slow speed make long sound at once — the most memory (Owner's iPhone reset on «Медленнее», 2026-11-18).
+      // A phrase is made in parts of at most about 110 letters at normal speed, fewer when slower.
+      const capL = Math.round(110 * Math.min(1, speed || 1)), pc = it.t.length > capL + 25 ? cut(it.t, capL) : null;
+      if (pc) { q.unshift({ t: pc[1], idx: it.idx, adv: it.adv }); it = { t: pc[0], idx: it.idx, adv: false }; }
       const a = performance.now(); let w;
       try { w = await synth(it.t, lang, voiceId, TTS.steps, speed, job); } catch (e) { if (my !== token || e.cancelled || /cancelled/.test(e.message)) return; throw e; }
       if (my !== token) return;
